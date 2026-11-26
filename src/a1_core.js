@@ -1,5 +1,5 @@
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='1.1.1';
+const VERSION='1.2.0';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -50,7 +50,7 @@ const EXT={javascript:'js',js:'js',typescript:'ts',ts:'ts',python:'py',py:'py',h
 function codeBlock(code,lang,name){ const box=h('div',{class:'code'}); const head=h('div',{class:'codeHead'}); head.append(h('span',null,name||lang||'code'),h('span',{class:'sp'}));
   const cp=h('button',{type:'button',html:ic('copy')+'コピー'}); cp.onclick=async()=>{ try{ await navigator.clipboard.writeText(code); cp.innerHTML=ic('check')+'コピーしました'; }catch(e){ const t=h('textarea'); t.value=code; document.body.append(t); t.select(); document.execCommand('copy'); t.remove(); cp.innerHTML=ic('check')+'コピーしました'; } setTimeout(()=>cp.innerHTML=ic('copy')+'コピー',1600); };
   const dl=h('button',{type:'button',html:ic('download')+'保存'}); dl.onclick=()=>downloadText(code,name||('code.'+(EXT[(lang||'').toLowerCase()]||'txt')));
-  head.append(cp,dl); if(/^(html|svg)$/i.test(lang||'')){ const pv=h('button',{type:'button',html:ic('play')+'動かす'}); pv.onclick=()=>openCodeWith([{name:name||'index.html',content:code}]); head.append(pv); }
+  head.append(cp,dl); if(/^(html|svg)$/i.test(lang||'')){ const pv=h('button',{type:'button',html:ic('eye')+'プレビュー'}); pv.onclick=()=>previewModal(name||(/svg/i.test(lang)?'image.svg':'index.html'),code); const ed=h('button',{type:'button',html:ic('code-xml')+'編集'}); ed.onclick=()=>openCodeWith([{name:name||'index.html',content:code}]); head.append(pv,ed); }
   const pre=h('pre',{html:hl(code,lang)}); box.append(head,pre); return box; }
 
 /* ---------- マークダウン ---------- */
