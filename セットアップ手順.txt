@@ -103,19 +103,14 @@ iPhone / iPad でアプリにする
 コード画面の「GitHubへ」ボタンでも、このトークンを使います。
 
 
-6. Spotify（Client ID）
+6. Spotify
 -------------------------------------
-1. https://developer.spotify.com/dashboard → Spotify アカウントでログイン → 「Create app」
-2. App name：エージェントAi、App description：自分用
-3. Redirect URIs に、アプリの画面（カスタマイズ → アプリ接続 → Spotify）に表示されている URL をそのまま入れる
-     例：https://taiki-ikemenn.github.io/agent-ai1/
-     ※ 最後の「/」や「index.html」の有無まで同じにしてください
-4. 「Web API」にチェック → Save
-5. Settings → 「Client ID」をコピー
-6. User Management に、自分（使う人）の Spotify のメールと名前を追加
-7. エージェントAi で：カスタマイズ → アプリ接続 → Spotify → Client ID を貼る → 「Spotifyでつなぐ」
-注意：曲の再生・一時停止などの操作には Spotify Premium と、どこかの端末で Spotify アプリを開いておくことが必要です。
-      検索とプレイリスト作成は無料プランでも使えます。
+設定はいりません（無料プランでもOK）。
+AIが Spotify の曲・アルバム・プレイリストを探して、チャットの中に Spotify の公式プレーヤーを出します。
+- Safari で open.spotify.com にログインしていれば、フル再生できることが多いです
+- ログインしていないときは30秒の試聴になります
+- 「Spotifyで開く」ボタンで Spotify アプリでも聴けます
+例：「Spotifyで YOASOBI の曲を探して」「作業用のlo-fiプレイリストを出して」
 
 
 7. 通知

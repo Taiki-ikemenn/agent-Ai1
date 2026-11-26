@@ -3,7 +3,7 @@ const T=(type,description,extra={})=>({type,description,...extra});
 const OBJ=(props,req=[])=>({type:'object',properties:props,required:req});
 const TOOLS={};
 function tool(name,{desc,params,label,icon,need,group='base',run}){ TOOLS[name]={decl:{name,description:desc,parameters:params||OBJ({})},label:label||(()=>name),icon:icon||'wrench',need,group,run}; }
-function toolDecls(filter){ return Object.values(TOOLS).filter(t=>{ if(filter&&!filter(t)) return false; if(t.group==='code'&&!filter) return false; if(!t.need) return true; const c=CONNS.find(x=>x.id===t.need); return c&&connOk(c); }).map(t=>t.decl); }
+function toolDecls(filter){ return Object.values(TOOLS).filter(t=>{ if(filter&&!filter(t)) return false; if(t.group==='code'&&!filter) return false; if(!t.need) return true; if(t.need==='spotify_api') return !!SEC.get('spotify'); const c=CONNS.find(x=>x.id===t.need); return c&&connOk(c); }).map(t=>t.decl); }
 const short=(s,n=40)=>{ s=String(s||''); return s.length>n?s.slice(0,n)+'…':s; };
 
 /* ---------- メモリー ---------- */
@@ -107,13 +107,22 @@ tool('github_write',{icon:'git-commit-horizontal',need:'github',label:a=>'GitHub
 tool('github_issue',{icon:'circle-dot',need:'github',label:a=>'Issueを作る：'+short(a.title),desc:'Issueを作る',params:OBJ({repo:T('string','owner/name'),title:T('string','タイトル'),body:T('string','本文')},['repo','title']),run:async(a,ctx)=>{ const j=await ghfetch(`/repos/${a.repo}/issues`,{method:'POST',body:JSON.stringify({title:a.title,body:a.body||''})}); ctx.res.actions.push({label:'Issue #'+j.number,url:j.html_url,icon:'circle-dot'}); return {ok:true,number:j.number}; }});
 
 /* ---------- Spotify ---------- */
-tool('spotify_search',{icon:'disc-3',need:'spotify',label:a=>'Spotifyで探す：'+short(a.query),desc:'曲・アーティスト・プレイリストを探す',params:OBJ({query:T('string','探す言葉'),type:T('string','種類',{enum:['track','artist','playlist','album']})},['query']),
-  run:async(a,ctx)=>{ const t=a.type||'track'; const j=await spfetch(`/search?type=${t}&limit=6&q=${encodeURIComponent(a.query)}`); const items=(j[t+'s']&&j[t+'s'].items||[]).filter(Boolean).map(x=>({uri:x.uri,name:x.name,by:(x.artists||[]).map(r=>r.name).join(', ')||(x.owner&&x.owner.display_name)||'',img:((x.album&&x.album.images)||x.images||[]).slice(-1)[0]?.url||'',url:x.external_urls&&x.external_urls.spotify}));
-    items.slice(0,4).forEach(i=>ctx.res.cards.push({kind:'spotify',data:i})); return {items:items.map(i=>({uri:i.uri,name:i.name,by:i.by}))}; }});
-tool('spotify_control',{icon:'circle-play',need:'spotify',label:a=>'Spotify：'+({play:'再生',pause:'一時停止',next:'次の曲',previous:'前の曲',now:'再生中の曲'}[a.action]||a.action),desc:'再生をあやつる。play は uri を渡すとその曲を再生',params:OBJ({action:T('string','操作',{enum:['play','pause','next','previous','now']}),uri:T('string','spotify:track:... など')},['action']),
+const SPRE=/open\.spotify\.com\/(?:intl-[a-z]+\/)?(track|album|playlist|artist|episode|show)\/([A-Za-z0-9]{22})/;
+async function spOembed(url){ try{ const r=await fetchT('https://open.spotify.com/oembed?url='+encodeURIComponent(url),8000); if(r.ok) return await r.json(); }catch(e){} return null; }
+tool('spotify_search',{icon:'disc-3',need:'spotify',label:a=>'Spotifyで探す：'+short(a.query),desc:'Spotifyの曲・アルバム・プレイリスト・アーティストを探して、チャットの中にSpotifyのプレーヤーを出す（ユーザーはその場で再生できる）',params:OBJ({query:T('string','探す言葉（曲名・アーティスト・気分など）'),type:T('string','種類',{enum:['track','album','playlist','artist']}),max:T('integer','件数 1〜4')},['query']),
+  run:async(a,ctx)=>{ const t=a.type||'track', n=clamp(a.max||3,1,4); let items=[];
+    if(SEC.get('spotify')){ try{ const j=await spfetch(`/search?type=${t}&limit=${n}&q=${encodeURIComponent(a.query)}`); items=(j[t+'s']&&j[t+'s'].items||[]).filter(Boolean).map(x=>({type:t,id:x.id,name:x.name,by:(x.artists||[]).map(r=>r.name).join(', ')||(x.owner&&x.owner.display_name)||'',uri:x.uri})); }catch(e){} }
+    if(!items.length){ const kind={track:'曲',album:'アルバム',playlist:'プレイリスト',artist:'アーティスト'}[t]; const r=await geminiText(`Google検索で、Spotifyの「${a.query}」に合う${kind}のページ（https://open.spotify.com/${t}/... のURL）を${n}件見つけて、JSON配列 [{"url":"","name":"","by":"アーティスト名"}] だけを返して。URLは実在するものだけ。`,{tools:[{google_search:{}}],signal:ctx.signal});
+      const m=r.text.match(/\[[\s\S]*\]/); let arr=[]; try{ arr=m?JSON.parse(m[0]):[]; }catch(e){} const seen=new Set();
+      for(const v of arr){ const mm=String(v.url||'').match(SPRE); if(!mm||seen.has(mm[2])) continue; seen.add(mm[2]); items.push({type:mm[1],id:mm[2],name:v.name||'',by:v.by||''}); }
+      if(!items.length){ (r.text.match(new RegExp(SPRE.source,'g'))||[]).forEach(u=>{ const mm=u.match(SPRE); if(!seen.has(mm[2])){ seen.add(mm[2]); items.push({type:mm[1],id:mm[2],name:'',by:''}); } }); } }
+    items=items.slice(0,n); await Promise.all(items.map(async it=>{ const o=await spOembed(`https://open.spotify.com/${it.type}/${it.id}`); if(o){ it.ok=true; if(o.title) it.name=o.title; } }));
+    const good=items.filter(it=>it.ok!==false); good.forEach(it=>ctx.res.cards.push({kind:'spotify',data:{embed:true,type:it.type,id:it.id,name:it.name,by:it.by,url:`https://open.spotify.com/${it.type}/${it.id}`,uri:`spotify:${it.type}:${it.id}`}}));
+    return good.length?{shown:good.map(i=>i.name+(i.by?' / '+i.by:''))}:{note:'Spotifyで見つかりませんでした。YouTubeで探すこともできます'}; }});
+tool('spotify_control',{icon:'circle-play',need:'spotify_api',label:a=>'Spotify：'+({play:'再生',pause:'一時停止',next:'次の曲',previous:'前の曲',now:'再生中の曲'}[a.action]||a.action),desc:'再生をあやつる。play は uri を渡すとその曲を再生',params:OBJ({action:T('string','操作',{enum:['play','pause','next','previous','now']}),uri:T('string','spotify:track:... など')},['action']),
   run:async a=>{ if(a.action==='now'){ const j=await spfetch('/me/player/currently-playing'); return j&&j.item?{name:j.item.name,by:j.item.artists.map(r=>r.name).join(', '),playing:j.is_playing}:{note:'何も再生していません'}; }
     if(a.action==='play'){ const body=a.uri?(a.uri.includes(':track:')?{uris:[a.uri]}:{context_uri:a.uri}):{}; await spfetch('/me/player/play',{method:'PUT',body:JSON.stringify(body)}); return {ok:true}; } if(a.action==='pause'){ await spfetch('/me/player/pause',{method:'PUT'}); return {ok:true}; } await spfetch('/me/player/'+a.action,{method:'POST'}); return {ok:true}; }});
-tool('spotify_playlist',{icon:'list-music',need:'spotify',label:a=>'プレイリストを作る：'+short(a.name),desc:'曲のuriを集めてプレイリストを作る',params:OBJ({name:T('string','名前'),uris:{type:'array',items:{type:'string'},description:'spotify:track:... の一覧'},description:T('string','説明')},['name','uris']),
+tool('spotify_playlist',{icon:'list-music',need:'spotify_api',label:a=>'プレイリストを作る：'+short(a.name),desc:'曲のuriを集めてプレイリストを作る',params:OBJ({name:T('string','名前'),uris:{type:'array',items:{type:'string'},description:'spotify:track:... の一覧'},description:T('string','説明')},['name','uris']),
   run:async(a,ctx)=>{ const me=await spfetch('/me'); const p=await spfetch(`/users/${me.id}/playlists`,{method:'POST',body:JSON.stringify({name:a.name,description:a.description||'エージェントAiが作りました',public:false})}); await spfetch(`/playlists/${p.id}/tracks`,{method:'POST',body:JSON.stringify({uris:a.uris.slice(0,100)})}); ctx.res.actions.push({label:'Spotifyで開く',url:p.external_urls.spotify,icon:'disc-3'}); return {ok:true}; }});
 
 /* ---------- Canva / Adobe Express ---------- */

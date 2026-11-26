@@ -389,6 +389,7 @@ label.lab{display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:
   .top input.field{width:120px!important}
 }
 @media (max-width:860px){ .brand .collapse,.nav .kbd{display:none} }
+a.btn{text-decoration:none;color:var(--ink)}a.btn.pri{color:#fff}
 
 </style>
 </head>
@@ -400,7 +401,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='1.0.1';
+const VERSION='1.1.0';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -571,7 +572,7 @@ function sysPrompt(extra=''){ const st=S.settings, ins=st.instr||{}, p=curProjec
   return `あなたは「エージェントAi」。ユーザーの作業を実際に手伝うAIエージェントです。会話だけで終わらせず、必要なら道具（関数）を使って調べる・作る・保存する・送るところまで進めてください。
 今日は ${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${'日月火水木金土'[now.getDay()]}）${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}。ユーザーの地域：${(st.conn.weather&&st.conn.weather.place)||'日本'}。
 返答の言語：${ins.lang==='en'?'英語':'日本語'}。話し方：${form}。長さ：${len}。${det}。絵文字は使わない。
-最新の情報・ニュース・値段・人物などは推測せず web_search で調べ、出典を示す。ファイルやコードを渡すときは create_file を使う（コードは会話にも \`\`\` で示す）。画像・音楽・動画は create_image / create_music / create_video を使う。
+最新の情報・ニュース・値段・人物などは推測せず web_search で調べ、出典を示す。ファイルやコードを渡すときは create_file を使う（コードは会話にも \`\`\` で示す）。画像・音楽・動画は create_image / create_music / create_video を使う。既存の曲を聴きたいときは spotify_search（なければ youtube_search）でプレーヤーを出す。
 ユーザーについて長く役立つ事実（好み・家族・持ち物・目標など）を知ったら memory_save で覚える。ほかのチャットの内容が必要なら search_chats を使う。
 メールの送信・ファイルの上書き・GitHubへの書きこみなど、取り消しにくい操作は、内容を見せて確認を取ってから行う。
 使えるアプリ接続：${conns||'なし'}。
@@ -725,7 +726,7 @@ const CONNS=[
   {id:'youtube',name:'YouTube',icon:'youtube',color:'#ff0033',desc:'動画を探して、チャットの中で再生',kind:'google-opt'},
   {id:'browser',name:'ブラウザ',icon:'globe',color:'#4f6bff',desc:'Web検索・ページを読む・リンクを開く（設定不要）',kind:'free'},
   {id:'canva',name:'Canva',icon:'palette',color:'#00c4cc',desc:'デザインの指示書を作ってCanvaを開く',kind:'link'},
-  {id:'spotify',name:'Spotify',icon:'disc-3',color:'#1db954',desc:'曲を探す・再生・プレイリスト作成',kind:'spotify'},
+  {id:'spotify',name:'Spotify',icon:'disc-3',color:'#1db954',desc:'曲・アルバム・プレイリストを探して、チャットの中で再生（設定不要）',kind:'free'},
   {id:'contacts',name:'Google連絡先',icon:'contact',color:'#1a73e8',desc:'連絡先を探す・追加',kind:'google'},
   {id:'forms',name:'Googleフォーム',icon:'clipboard-list',color:'#7248b9',desc:'アンケートを作る・回答を集計',kind:'google'},
   {id:'adobe',name:'Adobe Express',icon:'pen-tool',color:'#eb1000',desc:'デザインの指示書を作ってAdobe Expressを開く',kind:'link'}];
@@ -738,7 +739,7 @@ const T=(type,description,extra={})=>({type,description,...extra});
 const OBJ=(props,req=[])=>({type:'object',properties:props,required:req});
 const TOOLS={};
 function tool(name,{desc,params,label,icon,need,group='base',run}){ TOOLS[name]={decl:{name,description:desc,parameters:params||OBJ({})},label:label||(()=>name),icon:icon||'wrench',need,group,run}; }
-function toolDecls(filter){ return Object.values(TOOLS).filter(t=>{ if(filter&&!filter(t)) return false; if(t.group==='code'&&!filter) return false; if(!t.need) return true; const c=CONNS.find(x=>x.id===t.need); return c&&connOk(c); }).map(t=>t.decl); }
+function toolDecls(filter){ return Object.values(TOOLS).filter(t=>{ if(filter&&!filter(t)) return false; if(t.group==='code'&&!filter) return false; if(!t.need) return true; if(t.need==='spotify_api') return !!SEC.get('spotify'); const c=CONNS.find(x=>x.id===t.need); return c&&connOk(c); }).map(t=>t.decl); }
 const short=(s,n=40)=>{ s=String(s||''); return s.length>n?s.slice(0,n)+'…':s; };
 
 /* ---------- メモリー ---------- */
@@ -842,13 +843,22 @@ tool('github_write',{icon:'git-commit-horizontal',need:'github',label:a=>'GitHub
 tool('github_issue',{icon:'circle-dot',need:'github',label:a=>'Issueを作る：'+short(a.title),desc:'Issueを作る',params:OBJ({repo:T('string','owner/name'),title:T('string','タイトル'),body:T('string','本文')},['repo','title']),run:async(a,ctx)=>{ const j=await ghfetch(`/repos/${a.repo}/issues`,{method:'POST',body:JSON.stringify({title:a.title,body:a.body||''})}); ctx.res.actions.push({label:'Issue #'+j.number,url:j.html_url,icon:'circle-dot'}); return {ok:true,number:j.number}; }});
 
 /* ---------- Spotify ---------- */
-tool('spotify_search',{icon:'disc-3',need:'spotify',label:a=>'Spotifyで探す：'+short(a.query),desc:'曲・アーティスト・プレイリストを探す',params:OBJ({query:T('string','探す言葉'),type:T('string','種類',{enum:['track','artist','playlist','album']})},['query']),
-  run:async(a,ctx)=>{ const t=a.type||'track'; const j=await spfetch(`/search?type=${t}&limit=6&q=${encodeURIComponent(a.query)}`); const items=(j[t+'s']&&j[t+'s'].items||[]).filter(Boolean).map(x=>({uri:x.uri,name:x.name,by:(x.artists||[]).map(r=>r.name).join(', ')||(x.owner&&x.owner.display_name)||'',img:((x.album&&x.album.images)||x.images||[]).slice(-1)[0]?.url||'',url:x.external_urls&&x.external_urls.spotify}));
-    items.slice(0,4).forEach(i=>ctx.res.cards.push({kind:'spotify',data:i})); return {items:items.map(i=>({uri:i.uri,name:i.name,by:i.by}))}; }});
-tool('spotify_control',{icon:'circle-play',need:'spotify',label:a=>'Spotify：'+({play:'再生',pause:'一時停止',next:'次の曲',previous:'前の曲',now:'再生中の曲'}[a.action]||a.action),desc:'再生をあやつる。play は uri を渡すとその曲を再生',params:OBJ({action:T('string','操作',{enum:['play','pause','next','previous','now']}),uri:T('string','spotify:track:... など')},['action']),
+const SPRE=/open\.spotify\.com\/(?:intl-[a-z]+\/)?(track|album|playlist|artist|episode|show)\/([A-Za-z0-9]{22})/;
+async function spOembed(url){ try{ const r=await fetchT('https://open.spotify.com/oembed?url='+encodeURIComponent(url),8000); if(r.ok) return await r.json(); }catch(e){} return null; }
+tool('spotify_search',{icon:'disc-3',need:'spotify',label:a=>'Spotifyで探す：'+short(a.query),desc:'Spotifyの曲・アルバム・プレイリスト・アーティストを探して、チャットの中にSpotifyのプレーヤーを出す（ユーザーはその場で再生できる）',params:OBJ({query:T('string','探す言葉（曲名・アーティスト・気分など）'),type:T('string','種類',{enum:['track','album','playlist','artist']}),max:T('integer','件数 1〜4')},['query']),
+  run:async(a,ctx)=>{ const t=a.type||'track', n=clamp(a.max||3,1,4); let items=[];
+    if(SEC.get('spotify')){ try{ const j=await spfetch(`/search?type=${t}&limit=${n}&q=${encodeURIComponent(a.query)}`); items=(j[t+'s']&&j[t+'s'].items||[]).filter(Boolean).map(x=>({type:t,id:x.id,name:x.name,by:(x.artists||[]).map(r=>r.name).join(', ')||(x.owner&&x.owner.display_name)||'',uri:x.uri})); }catch(e){} }
+    if(!items.length){ const kind={track:'曲',album:'アルバム',playlist:'プレイリスト',artist:'アーティスト'}[t]; const r=await geminiText(`Google検索で、Spotifyの「${a.query}」に合う${kind}のページ（https://open.spotify.com/${t}/... のURL）を${n}件見つけて、JSON配列 [{"url":"","name":"","by":"アーティスト名"}] だけを返して。URLは実在するものだけ。`,{tools:[{google_search:{}}],signal:ctx.signal});
+      const m=r.text.match(/\[[\s\S]*\]/); let arr=[]; try{ arr=m?JSON.parse(m[0]):[]; }catch(e){} const seen=new Set();
+      for(const v of arr){ const mm=String(v.url||'').match(SPRE); if(!mm||seen.has(mm[2])) continue; seen.add(mm[2]); items.push({type:mm[1],id:mm[2],name:v.name||'',by:v.by||''}); }
+      if(!items.length){ (r.text.match(new RegExp(SPRE.source,'g'))||[]).forEach(u=>{ const mm=u.match(SPRE); if(!seen.has(mm[2])){ seen.add(mm[2]); items.push({type:mm[1],id:mm[2],name:'',by:''}); } }); } }
+    items=items.slice(0,n); await Promise.all(items.map(async it=>{ const o=await spOembed(`https://open.spotify.com/${it.type}/${it.id}`); if(o){ it.ok=true; if(o.title) it.name=o.title; } }));
+    const good=items.filter(it=>it.ok!==false); good.forEach(it=>ctx.res.cards.push({kind:'spotify',data:{embed:true,type:it.type,id:it.id,name:it.name,by:it.by,url:`https://open.spotify.com/${it.type}/${it.id}`,uri:`spotify:${it.type}:${it.id}`}}));
+    return good.length?{shown:good.map(i=>i.name+(i.by?' / '+i.by:''))}:{note:'Spotifyで見つかりませんでした。YouTubeで探すこともできます'}; }});
+tool('spotify_control',{icon:'circle-play',need:'spotify_api',label:a=>'Spotify：'+({play:'再生',pause:'一時停止',next:'次の曲',previous:'前の曲',now:'再生中の曲'}[a.action]||a.action),desc:'再生をあやつる。play は uri を渡すとその曲を再生',params:OBJ({action:T('string','操作',{enum:['play','pause','next','previous','now']}),uri:T('string','spotify:track:... など')},['action']),
   run:async a=>{ if(a.action==='now'){ const j=await spfetch('/me/player/currently-playing'); return j&&j.item?{name:j.item.name,by:j.item.artists.map(r=>r.name).join(', '),playing:j.is_playing}:{note:'何も再生していません'}; }
     if(a.action==='play'){ const body=a.uri?(a.uri.includes(':track:')?{uris:[a.uri]}:{context_uri:a.uri}):{}; await spfetch('/me/player/play',{method:'PUT',body:JSON.stringify(body)}); return {ok:true}; } if(a.action==='pause'){ await spfetch('/me/player/pause',{method:'PUT'}); return {ok:true}; } await spfetch('/me/player/'+a.action,{method:'POST'}); return {ok:true}; }});
-tool('spotify_playlist',{icon:'list-music',need:'spotify',label:a=>'プレイリストを作る：'+short(a.name),desc:'曲のuriを集めてプレイリストを作る',params:OBJ({name:T('string','名前'),uris:{type:'array',items:{type:'string'},description:'spotify:track:... の一覧'},description:T('string','説明')},['name','uris']),
+tool('spotify_playlist',{icon:'list-music',need:'spotify_api',label:a=>'プレイリストを作る：'+short(a.name),desc:'曲のuriを集めてプレイリストを作る',params:OBJ({name:T('string','名前'),uris:{type:'array',items:{type:'string'},description:'spotify:track:... の一覧'},description:T('string','説明')},['name','uris']),
   run:async(a,ctx)=>{ const me=await spfetch('/me'); const p=await spfetch(`/users/${me.id}/playlists`,{method:'POST',body:JSON.stringify({name:a.name,description:a.description||'エージェントAiが作りました',public:false})}); await spfetch(`/playlists/${p.id}/tracks`,{method:'POST',body:JSON.stringify({uris:a.uris.slice(0,100)})}); ctx.res.actions.push({label:'Spotifyで開く',url:p.external_urls.spotify,icon:'disc-3'}); return {ok:true}; }});
 
 /* ---------- Canva / Adobe Express ---------- */
@@ -1006,6 +1016,7 @@ function cardEl(c){ const d=c.data; if(c.kind==='weather'){ const ico=code=>((WC
     el.append(h('div',{class:'row',html:`<div style="width:54px;height:54px;border-radius:16px;background:#2aa4f4;color:#fff;display:grid;place-items:center">${ic(ico(d.now.code))}</div><div style="flex:1"><small class="muted">${esc(d.place)}</small><div style="font-size:30px;font-weight:800;line-height:1.1">${Math.round(d.now.temp)}°<span style="font-size:15px;font-weight:600;margin-left:8px">${esc(d.now.sky)}</span></div><small class="muted">体感 ${Math.round(d.now.feels)}° ・ 湿度 ${d.now.humid}% ・ 風 ${Math.round(d.now.wind)}km/h</small></div>`}));
     const row=h('div',{style:'display:flex;gap:8px;margin-top:14px;overflow:auto'}); d.daily.forEach(x=>{ const dt=new Date(x.date); row.append(h('div',{style:'flex:1;min-width:76px;text-align:center;background:var(--panel2);border-radius:12px;padding:8px 4px;font-size:12.5px',html:`<div class="muted">${dt.getMonth()+1}/${dt.getDate()}（${'日月火水木金土'[dt.getDay()]}）</div><div style="margin:4px 0;color:#2aa4f4">${ic(ico(x.code))}</div><b>${Math.round(x.max)}°</b> <span class="muted">${Math.round(x.min)}°</span><div style="color:#2aa4f4">${ic('umbrella')}${x.rain??0}%</div>`})); }); el.append(row); return el; }
   if(c.kind==='youtube'){ const el=h('div',{class:'media',style:'max-width:560px'}); const fr=h('div',{style:'aspect-ratio:16/9;background:#000 url(https://i.ytimg.com/vi/'+d.id+'/hqdefault.jpg) center/cover;display:grid;place-items:center;cursor:pointer',html:'<div style="width:64px;height:44px;border-radius:12px;background:#ff0033;display:grid;place-items:center;color:#fff">'+ic('play')+'</div>'}); fr.onclick=()=>fr.replaceWith(h('iframe',{src:`https://www.youtube-nocookie.com/embed/${d.id}?autoplay=1&playsinline=1`,style:'width:100%;aspect-ratio:16/9;border:0;display:block',allow:'autoplay; encrypted-media; picture-in-picture; fullscreen',allowfullscreen:true})); el.append(fr,h('div',{class:'mBar',html:ic('youtube')+`<b>${esc(d.title)}</b><small class="muted">${esc(d.channel||'')}</small>`})); return el; }
+  if(c.kind==='spotify'&&d.embed){ const big=d.type!=='track'&&d.type!=='episode'; const el=h('div',{class:'media',style:'max-width:560px;background:transparent;border:0'}); el.append(h('iframe',{src:`https://open.spotify.com/embed/${d.type}/${d.id}?utm_source=generator&theme=0`,style:`width:100%;height:${big?352:152}px;border:0;border-radius:14px;display:block`,allow:'autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture',loading:'lazy'})); const bar=h('div',{class:'row',style:'gap:8px;margin-top:6px'}); bar.append(h('a',{class:'btn sm',href:d.url,target:'_blank',rel:'noopener',html:ic('external-link')+'Spotifyで開く'})); if(SEC.get('spotify')){ const p=h('button',{class:'btn sm pri',style:'background:#1db954',html:ic('play')+'Spotifyアプリで再生'}); p.onclick=async()=>{ try{ await TOOLS.spotify_control.run({action:'play',uri:d.uri}); toast('Spotifyで再生しました','disc-3'); }catch(e){ toast(e.message,'x',4000); } }; bar.append(p); } el.append(bar); return el; }
   if(c.kind==='spotify'){ const el=h('div',{class:'fileCard'}); el.append(h('div',{class:'fi',style:`background:#1db954 url(${d.img}) center/cover;color:#fff`,html:d.img?'':ic('disc-3')}),h('div',{style:'min-width:0;flex:1',html:`<b>${esc(d.name)}</b><small>${esc(d.by)}</small>`})); const p=h('button',{class:'btn sm pri',style:'background:#1db954',html:ic('play')+'再生'}); p.onclick=async()=>{ try{ await TOOLS.spotify_control.run({action:'play',uri:d.uri}); toast('Spotifyで再生しました','disc-3'); }catch(e){ toast(e.message,'x',4000); } }; el.append(p); if(d.url) el.append(h('a',{class:'btn sm ghost',href:d.url,target:'_blank',html:ic('external-link')})); return el; }
   return null; }
 function keyHelp(){ modal((m,close)=>{ m.append(h('h3',null,'Geminiのキーが見つかりません'),h('p',{class:'muted',style:'line-height:1.8'},'エージェントAiは、同じサイトの Home XR OS などに入れた Gemini のキーを、この端末の中から自動で読み取ります（アカウントには保存しません）。ほかのアプリでキーを入れるか、ここで入力してください。'));
@@ -1280,7 +1291,7 @@ function connSetup(c){ modal((m,close)=>{ m.append(h('div',{class:'row',style:'m
   else if(c.kind==='token'){ const tk=h('input',{class:'field',type:'password',placeholder:'github_pat_… または ghp_…',autocomplete:'off'}); const cur=SEC.get('github'); m.append(h('p',{class:'muted',style:'font-size:13px;line-height:1.7;margin:0 0 6px'},'GitHub の「Personal access token（fine-grained）」を入れます。リポジトリの Contents と Issues を Read and write にしてください。'),cur?h('div',{class:'chip on',style:'margin-bottom:8px',html:ic('check')+'接続中：'+esc(cur.user||'')}):'',h('label',{class:'lab'},'トークン（この端末だけに保存）'),tk);
     const con=h('button',{class:'btn pri',html:ic('check')+'保存してたしかめる'}); con.onclick=async()=>{ const t=tk.value.trim(); if(!t) return; con.disabled=true; try{ const r=await fetch('https://api.github.com/user',{headers:{Authorization:'Bearer '+t}}); const j=await r.json(); if(!r.ok) throw new Error(j.message); SEC.set('github',{token:t,user:j.login}); toast(j.login+' としてつながりました','check'); close(); }catch(e){ toast('つながりません：'+e.message,'x'); } con.disabled=false; };
     if(cur) foot.append(h('button',{class:'btn danger',style:'margin-right:auto',onclick:()=>{ SEC.del('github'); close(); }},'接続を切る')); foot.append(closeB,con); }
-  else { const on=(S.settings.conn[c.id]||{}).on!==false; m.append(h('p',{class:'muted',style:'font-size:13px;line-height:1.7'},{weather:'Open-Meteo（無料・登録不要）で天気を調べます。',browser:'Gemini の Google 検索とページ読み取りで、Webを調べます。リンクはボタンで開けます。',canva:'Canva には外から直接書きこめないため、AIがデザインの指示書（文・配色・レイアウト・マジック生成に貼る文）を作り、ボタン1つでCanvaの作成ページを開きます。',adobe:'Adobe Express には外から直接書きこめないため、AIが指示書と Firefly 用の文を作り、ボタン1つで Adobe Express / Firefly を開きます。'}[c.id]||''));
+  else { const on=(S.settings.conn[c.id]||{}).on!==false; m.append(h('p',{class:'muted',style:'font-size:13px;line-height:1.7'},{weather:'Open-Meteo（無料・登録不要）で天気を調べます。',browser:'Gemini の Google 検索とページ読み取りで、Webを調べます。リンクはボタンで開けます。',canva:'Canva には外から直接書きこめないため、AIがデザインの指示書（文・配色・レイアウト・マジック生成に貼る文）を作り、ボタン1つでCanvaの作成ページを開きます。',spotify:'Spotify の公式の埋め込みプレーヤーを使うので、設定はいりません。AIが曲やプレイリストを探して、チャットの中で再生できるようにします。Safari で Spotify にログインしていればフル再生、していなければ30秒の試聴になります（無料プランでもOK）。',adobe:'Adobe Express には外から直接書きこめないため、AIが指示書と Firefly 用の文を作り、ボタン1つで Adobe Express / Firefly を開きます。'}[c.id]||''));
     m.append(setRow('AIに使わせる','',toggle(on,v=>DB.setSettings({conn:{[c.id]:{on:v}}}))));
     if(c.id==='weather'){ const pl=h('input',{class:'field',value:S.settings.conn.weather.place||'',placeholder:'例：越谷市'}); pl.onchange=()=>DB.setSettings({conn:{weather:{place:pl.value.trim()}}}); m.append(h('label',{class:'lab'},'いつもの場所'),pl,h('div',{class:'help'},'場所を言わずに天気を聞いたときに使います。')); }
     foot.append(closeB); }

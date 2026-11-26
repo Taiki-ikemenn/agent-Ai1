@@ -374,3 +374,4 @@ label.lab{display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:
   .top input.field{width:120px!important}
 }
 @media (max-width:860px){ .brand .collapse,.nav .kbd{display:none} }
+a.btn{text-decoration:none;color:var(--ink)}a.btn.pri{color:#fff}

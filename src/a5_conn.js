@@ -34,7 +34,7 @@ const CONNS=[
   {id:'youtube',name:'YouTube',icon:'youtube',color:'#ff0033',desc:'動画を探して、チャットの中で再生',kind:'google-opt'},
   {id:'browser',name:'ブラウザ',icon:'globe',color:'#4f6bff',desc:'Web検索・ページを読む・リンクを開く（設定不要）',kind:'free'},
   {id:'canva',name:'Canva',icon:'palette',color:'#00c4cc',desc:'デザインの指示書を作ってCanvaを開く',kind:'link'},
-  {id:'spotify',name:'Spotify',icon:'disc-3',color:'#1db954',desc:'曲を探す・再生・プレイリスト作成',kind:'spotify'},
+  {id:'spotify',name:'Spotify',icon:'disc-3',color:'#1db954',desc:'曲・アルバム・プレイリストを探して、チャットの中で再生（設定不要）',kind:'free'},
   {id:'contacts',name:'Google連絡先',icon:'contact',color:'#1a73e8',desc:'連絡先を探す・追加',kind:'google'},
   {id:'forms',name:'Googleフォーム',icon:'clipboard-list',color:'#7248b9',desc:'アンケートを作る・回答を集計',kind:'google'},
   {id:'adobe',name:'Adobe Express',icon:'pen-tool',color:'#eb1000',desc:'デザインの指示書を作ってAdobe Expressを開く',kind:'link'}];
