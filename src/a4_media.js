@@ -24,7 +24,10 @@ const NOTE={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,
 function chordNotes(name){ const m=String(name).match(/^([A-G][#b]?)(maj7|m7|7|m|dim|sus4|sus2|add9)?/); if(!m) return [60,64,67]; const r=NOTE[m[1]]; const q=m[2]||''; const iv={'':[0,4,7],m:[0,3,7],'7':[0,4,7,10],maj7:[0,4,7,11],m7:[0,3,7,10],dim:[0,3,6],sus4:[0,5,7],sus2:[0,2,7],add9:[0,4,7,14]}[q]||[0,4,7]; return iv.map(i=>48+r+i); }
 async function composeMusic(desc,{seconds=40,mood='',tempo=0}={}){ const j=await geminiText(`次の希望に合う短い曲を作曲して、JSONだけ返して。希望：「${desc}」${mood?' 雰囲気：'+mood:''}
 形式：{"title":"曲名(日本語)","bpm":${tempo||'60〜170の数'},"style":"pop|lofi|edm|rock|ambient|jazz|chiptune|cinematic|ballad のどれか","chords":["1小節ごとのコード(例 C, Am, F, G7, Em7)を8個"],"melody":[[拍(0〜31の数・小数可),長さ(拍),MIDI音番号(60〜84)],...20〜40個],"drums":true/false,"lead":"piano|bell|synth|square|pluck|strings のどれか"}`,{json:true});
-  if(!j||!j.chords) throw new Error('作曲に失敗しました'); j.bpm=clamp(+j.bpm||110,50,180); j.seconds=clamp(seconds,10,120); j.desc=desc; return j; }
+  if(!j||!j.chords) throw new Error('作曲に失敗しました');
+  j.chords=(Array.isArray(j.chords)?j.chords:String(j.chords).split(/[\s,]+/)).map(String).filter(Boolean).slice(0,16); if(!j.chords.length) j.chords=['C','Am','F','G'];
+  j.melody=(Array.isArray(j.melody)?j.melody:[]).map(x=>Array.isArray(x)?{b:+x[0],d:+x[1],n:+x[2]}:{b:+x.b,d:+x.d,n:+x.n}).filter(x=>isFinite(x.b)&&isFinite(x.d)&&isFinite(x.n));
+  j.drums=j.drums!==false; j.title=String(j.title||'AIの曲'); j.bpm=clamp(+j.bpm||110,50,180); j.seconds=clamp(seconds,10,120); j.desc=desc; return j; }
 async function renderMusic(sc){ const sr=44100, bpm=sc.bpm, beat=60/bpm, bars=sc.chords.length, loopBeats=bars*4, total=Math.max(beat*4,sc.seconds); const ctx=new OfflineAudioContext(2,Math.ceil(sr*(total+1.5)),sr);
   const master=ctx.createGain(); master.gain.value=.55; const comp=ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
   const rev=ctx.createConvolver(); const L=sr*2, ir=ctx.createBuffer(2,L,sr); for(let c=0;c<2;c++){ const d=ir.getChannelData(c); for(let i=0;i<L;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/L,3); } rev.buffer=ir; const rg=ctx.createGain(); rg.gain.value=sc.style==='ambient'||sc.style==='cinematic'?.5:.22; rev.connect(rg); rg.connect(master);
@@ -47,7 +50,7 @@ async function renderMusic(sc){ const sr=44100, bpm=sc.bpm, beat=60/bpm, bars=sc
       if(sc.drums!==false&&st!=='ambient'&&!(L2===0&&st==='ballad')) for(let b=0;b<4;b++){ const tb=t0+b*beat; if(st==='edm'||st==='rock'||b%2===0) kick(tb); if(b%2===1) hit(tb,{hp:1500,vol:.35,dec:.16}); hit(tb,{vol:.1}); hit(tb+beat/2,{vol:.07}); if(st==='lofi'&&b===3) hit(tb+beat*.75,{vol:.05}); }
     });
     // メロディ（2回目からは1オクターブ上を少し混ぜる）
-    (sc.melody||[]).forEach(([b,d,n])=>{ if(b>=loopBeats) return; tone(base+b*beat,Math.max(.1,d*beat),clamp(n,48,96),{...LEAD,pan:.05}); if(L2%2===1) tone(base+b*beat,Math.max(.1,d*beat),clamp(n,48,96)+12,{...LEAD,vol:LEAD.vol*.35}); });
+    (sc.melody||[]).map(x=>Array.isArray(x)?{b:x[0],d:x[1],n:x[2]}:x).forEach(({b,d,n})=>{ if(b>=loopBeats) return; tone(base+b*beat,Math.max(.1,d*beat),clamp(n,48,96),{...LEAD,pan:.05}); if(L2%2===1) tone(base+b*beat,Math.max(.1,d*beat),clamp(n,48,96)+12,{...LEAD,vol:LEAD.vol*.35}); });
   }
   master.gain.setValueAtTime(.55,total-1.2); master.gain.linearRampToValueAtTime(0,total+.8);
   return ctx.startRendering(); }

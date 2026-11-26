@@ -26,15 +26,17 @@ async function signInEmail(email,pass,create){ const m=FB.m; if(create) return m
 async function signOutAll(){ stopSync(); await FB.m.signOut(FB.auth); location.reload(); }
 
 /* ---------- データの場所：agentai/{uid}/... ---------- */
+const settingsOut=st=>{ const o=JSON.parse(JSON.stringify(st)); if(o.feed&&Array.isArray(o.feed.topics)) o.feed.topics=o.feed.topics.map(t=>Array.isArray(t)?{n:t[0],w:t[1]}:t); return o; };
+const settingsIn=st=>{ if(st&&st.feed&&Array.isArray(st.feed.topics)) st.feed.topics=st.feed.topics.map(t=>Array.isArray(t)?t:[t.n,t.w]); return st; };
 const DB={ base(){ return ['agentai',FB.user.uid]; }, col(...p){ return FB.m.collection(FB.db,...this.base(),...p); }, doc(...p){ return FB.m.doc(FB.db,...this.base(),...p); },
   clean(o){ return JSON.parse(JSON.stringify(o,(k,v)=>v===undefined?null:v)); },
   async put(col,id,data,merge=true){ return FB.m.setDoc(this.doc(col,id),this.clean(data),{merge}); },
   async del(col,id){ return FB.m.deleteDoc(this.doc(col,id)); },
-  async setSettings(patch){ S.settings=deepMerge(S.settings,patch); applyTheme(); BUS.emit('settings'); try{ await FB.m.setDoc(FB.m.doc(FB.db,...this.base()),{settings:this.clean(S.settings),updated:Date.now()},{merge:true}); }catch(e){ console.warn(e); } } };
+  async setSettings(patch){ S.settings=deepMerge(S.settings,patch); applyTheme(); BUS.emit('settings'); try{ await FB.m.setDoc(FB.m.doc(FB.db,...this.base()),{settings:this.clean(settingsOut(S.settings)),updated:Date.now()},{merge:true}); }catch(e){ console.warn(e); } } };
 function deepMerge(a,b){ const o=Array.isArray(a)?a.slice():{...a}; for(const k in b){ const v=b[k]; if(v&&typeof v==='object'&&!Array.isArray(v)&&a&&typeof a[k]==='object'&&!Array.isArray(a[k])) o[k]=deepMerge(a[k],v); else o[k]=v; } return o; }
 function stopSync(){ S.subs.forEach(f=>{ try{ f(); }catch(e){} }); S.subs=[]; }
 function startSync(){ stopSync(); const m=FB.m; const sub=(q,f)=>S.subs.push(m.onSnapshot(q,{includeMetadataChanges:false},f,e=>console.warn('sync',e)));
-  sub(m.doc(FB.db,...DB.base()),s=>{ const d=s.data()||{}; if(d.settings) S.settings=deepMerge(DEF_SETTINGS,d.settings); applyTheme(); S.synced=true; BUS.emit('settings'); BUS.emit('sync'); });
+  sub(m.doc(FB.db,...DB.base()),s=>{ const d=s.data()||{}; if(d.settings) S.settings=deepMerge(DEF_SETTINGS,settingsIn(d.settings)); applyTheme(); S.synced=true; BUS.emit('settings'); BUS.emit('sync'); });
   sub(m.query(DB.col('projects')),qs=>{ S.projects={}; qs.forEach(d=>S.projects[d.id]={id:d.id,...d.data()}); BUS.emit('projects'); });
   sub(m.query(DB.col('chats'),m.orderBy('updated','desc'),m.limit(200)),qs=>{ S.chats=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('chats'); });
   sub(m.query(DB.col('memories'),m.orderBy('at','desc'),m.limit(500)),qs=>{ S.memories=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('memories'); });
