@@ -1,0 +1,16 @@
+{
+  "name": "エージェントAi",
+  "short_name": "エージェントAi",
+  "description": "調べる・作る・送るまで手伝うAIエージェント",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0f1524",
+  "theme_color": "#0f1524",
+  "lang": "ja",
+  "icons": [
+    {"src": "icon-192.png", "sizes": "192x192", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png"},
+    {"src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"}
+  ]
+}

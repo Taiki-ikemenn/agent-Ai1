@@ -1,0 +1,47 @@
+/* ===== フィード（AIが全部つくるSNS風ニュース） ===== */
+const TOPIC_STYLE={テクノロジー:['cpu','#4f6bff'],AI:['sparkles','#7a5cff'],ゲーム:['gamepad-2','#ec4899'],科学:['atom','#14b8a6'],スポーツ:['trophy','#f59e0b'],エンタメ:['clapperboard','#ef4444'],経済:['chart-line','#0ea5e9'],天気:['cloud-sun','#2aa4f4'],暮らし:['house','#22c55e'],世界:['globe','#64748b']};
+const topicStyle=t=>TOPIC_STYLE[t]||['newspaper','#'+((([...String(t)].reduce((a,c)=>a*31+c.charCodeAt(0),7)>>>0)%0xaaaaaa)+0x333333).toString(16).slice(0,6)];
+let FEEDBUSY=false;
+async function refreshFeed(){ if(FEEDBUSY) return; if(!geminiKey().key){ keyHelp(); return; } FEEDBUSY=true; BUS.emit('feedBusy',true); const f=S.settings.feed; const now=new Date();
+  try{ const tps=f.topics.filter(t=>t[1]>0).sort((a,b)=>b[1]-a[1]).map(([n,w])=>`${n}(${w})`).join('、'); const tone=f.tone<34?'やさしく、小学生にもわかる言葉で':f.tone>66?'専門的に、数字やくわしい背景も入れて':'わかりやすく、少しくわしく';
+    const recent=S.feed.slice(0,20).map(p=>p.title).join(' / ');
+    const r=await geminiText(`あなたはSNS風ニュースフィードの編集者です。今日は${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日。Google検索で最新のニュースを調べて、投稿を${f.count}件つくってください。
+方針：${f.prompt}
+トピックと比重（0〜100、大きいほど多く）：${tps}
+書き方：${tone}。絵文字は使わない。事実だけを書き、推測はしない。
+${recent?'すでに出した投稿（重ならないように）：'+recent:''}
+JSONの配列だけを返す：[{"topic":"上のトピック名のどれか","title":"見出し(35文字まで)","body":"本文(100〜200文字)","tags":["タグ","タグ"],"image":"記事に合う写真風画像の英語プロンプト(人物の実名や顔は避ける)","source":"出典のサイト名","url":"出典のURL(わかれば)"}]`,{tools:[{google_search:{}}]});
+    const m=r.text.match(/\[[\s\S]*\]/); if(!m) throw new Error('ニュースを作れませんでした'); const posts=JSON.parse(m[0]); const gm=r.cand&&r.cand.groundingMetadata; const chunks=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean);
+    const batch=uid(); let i=0; for(const p of posts.slice(0,12)){ const src=p.url&&/^https?:/.test(p.url)?{title:p.source||'',url:p.url}:chunks[i]?{title:chunks[i].title,url:chunks[i].uri}:null; await DB.put('feed',uid(),{at:Date.now()-i*1000,batch,topic:p.topic||'ニュース',title:p.title,body:p.body,tags:(p.tags||[]).slice(0,4),image:p.image||p.title,seed:Math.floor(Math.random()*1e9),source:src,liked:false,saved:false},false); i++; }
+    LS.set('feedLast',Date.now()); const old=S.feed.filter(p=>!p.saved).slice(80); old.forEach(p=>DB.del('feed',p.id).catch(()=>{}));
+    if(document.hidden) notify('フィードを更新しました',posts[0]&&posts[0].title||'','#/feed');
+  }catch(e){ toast(errText(e),'x',4000); } FEEDBUSY=false; BUS.emit('feedBusy',false); }
+function feedAuto(){ const f=S.settings.feed; if(!f.every||!S.user) return; const last=LS.get('feedLast',0)||(S.feed[0]&&S.feed[0].at)||0; if(Date.now()-last>f.every*60e3) refreshFeed(); }
+const feedImg=(p,w=960,hh=540)=>`https://image.pollinations.ai/prompt/${encodeURIComponent(p.image+', editorial news photo, high quality')}?width=${w}&height=${hh}&seed=${p.seed}&nologo=true&model=flux`;
+PAGES.feed=pg=>{ let filter='', onlySaved=false;
+  const ref=h('button',{class:'btn pri',html:ic('refresh-cw')+'更新'}); ref.onclick=()=>refreshFeed(); const set=h('button',{class:'btn',html:ic('sliders-horizontal')+'<span class="lbl">好みを設定</span>',onclick:()=>feedSettings()});
+  topBar('フィード',{icon:'newspaper',right:[set,ref]});
+  const w=h('div',{class:'feedWrap'}); pg.append(w); const chips=h('div',{class:'row',style:'gap:6px;flex-wrap:wrap;margin-bottom:16px'}); const busyBox=h('div'); const list=h('div'); w.append(chips,busyBox,list);
+  const paintChips=()=>{ chips.innerHTML=''; const all=h('button',{class:'chip'+(!filter&&!onlySaved?' on':'')},'すべて'); all.onclick=()=>{ filter=''; onlySaved=false; paintAll(); }; chips.append(all); S.settings.feed.topics.filter(t=>t[1]>0).forEach(([n])=>{ const [i]=topicStyle(n); const b=h('button',{class:'chip'+(filter===n?' on':''),html:ic(i)+esc(n)}); b.onclick=()=>{ filter=filter===n?'':n; onlySaved=false; paintAll(); }; chips.append(b); }); const sv=h('button',{class:'chip'+(onlySaved?' on':''),html:ic('bookmark')+'保存した投稿'}); sv.onclick=()=>{ onlySaved=!onlySaved; filter=''; paintAll(); }; chips.append(sv); };
+  const paintBusy=()=>{ busyBox.innerHTML=''; ref.disabled=FEEDBUSY; ref.innerHTML=ic(FEEDBUSY?'loader':'refresh-cw')+(FEEDBUSY?'作成中':'更新'); if(FEEDBUSY) for(let i=0;i<2;i++) busyBox.append(h('div',{class:'post',html:'<div class="ph"><div class="pa skel" style="background:var(--panel2)"></div><div style="flex:1"><div class="skel" style="height:12px;width:40%;border-radius:6px"></div><div class="skel" style="height:10px;width:20%;border-radius:6px;margin-top:6px"></div></div></div><div class="skel" style="aspect-ratio:16/9"></div><div class="pb"><div class="skel" style="height:16px;width:80%;border-radius:6px"></div><div class="skel" style="height:12px;width:100%;border-radius:6px;margin-top:10px"></div><div class="skel" style="height:12px;width:90%;border-radius:6px;margin-top:6px"></div></div>'})); };
+  const paint=()=>{ list.innerHTML=''; const items=S.feed.filter(p=>(!filter||p.topic===filter)&&(!onlySaved||p.saved));
+    if(!items.length&&!FEEDBUSY){ list.append(h('div',{class:'empty',html:`<div class="ei">${ic('newspaper')}</div><b>${onlySaved?'保存した投稿はありません':'まだ投稿がありません'}</b>${onlySaved?'':'「更新」を押すと、AIが今日のニュースを調べて投稿を作ります。'}`})); return; }
+    items.forEach((p,i)=>{ const [ico,col]=topicStyle(p.topic); const el=h('article',{class:'post',style:`animation-delay:${Math.min(i,8)*.05}s`});
+      el.append(h('div',{class:'ph',html:`<div class="pa" style="background:${col}">${ic(ico)}</div><div style="flex:1;min-width:0"><b>${esc(p.topic)}ニュース</b><small>エージェントAi ・ ${ago(p.at)}${p.source&&p.source.title?' ・ '+esc(p.source.title):''}</small></div>`}));
+      const img=h('img',{class:'pimg',loading:'lazy',alt:'',src:feedImg(p)}); img.onerror=()=>{ img.style.display='none'; }; el.append(img);
+      el.append(h('div',{class:'pb',html:`<h3>${esc(p.title)}</h3><p>${esc(p.body)}</p>`})); if(p.tags&&p.tags.length) el.append(h('div',{class:'tags',html:p.tags.map(t=>`<span>#${esc(t)}</span>`).join('')}));
+      const pf=h('div',{class:'pf'}); const lk=h('button',{class:p.liked?'on':'',html:ic('heart')+'いいね'}); lk.onclick=()=>DB.put('feed',p.id,{liked:!p.liked}); const sv=h('button',{class:p.saved?'on':'',style:p.saved?'color:var(--acc)':'',html:ic('bookmark')+(p.saved?'保存済み':'保存')}); sv.onclick=()=>DB.put('feed',p.id,{saved:!p.saved});
+      const ask=h('button',{html:ic('message-circle')+'くわしく聞く'}); ask.onclick=async()=>{ go('#/new'); await sleep(250); const t=document.querySelector('.cbox textarea'); if(t){ t.value=`このニュースについて、背景や影響をくわしく調べて教えて。\n「${p.title}」\n${p.body}`; t.dispatchEvent(new Event('input')); t.focus(); } };
+      pf.append(lk,sv,ask,h('div',{class:'sp'})); if(p.source&&p.source.url) pf.append(h('a',{class:'btn sm ghost',href:p.source.url,target:'_blank',rel:'noopener',html:ic('external-link')+'出典'}));
+      if(navigator.share){ const sh=h('button',{html:ic('share-2')}); sh.onclick=()=>navigator.share({title:p.title,text:p.body,url:p.source&&p.source.url||undefined}).catch(()=>{}); pf.append(sh); } el.append(pf); list.append(el); }); };
+  const paintAll=()=>{ paintChips(); paint(); }; paintAll(); paintBusy();
+  const offs=[BUS.on('feed',paint),BUS.on('feedBusy',()=>{ paintBusy(); paint(); }),BUS.on('settings',paintChips)]; CUR.cleanup=()=>offs.forEach(f=>f()); feedAuto(); };
+function feedSettings(){ const f=JSON.parse(JSON.stringify(S.settings.feed)); modal((m,close)=>{ m.append(h('h3',null,'フィードの好み'),h('p',{class:'muted',style:'margin:0 0 6px;font-size:13px'},'どんなニュースを出すかをAIへの指示で決めます。'));
+  const pr=h('textarea',{class:'field',rows:3},f.prompt); m.append(h('label',{class:'lab'},'AIへの指示'),pr);
+  const tl=h('div'); const paintT=()=>{ tl.innerHTML=''; f.topics.forEach((t,i)=>{ const [ico,col]=topicStyle(t[0]); const r=h('div',{class:'row',style:'margin:8px 0'}); r.append(h('span',{style:`width:30px;height:30px;border-radius:9px;background:${col};color:#fff;display:grid;place-items:center;flex:none`,html:ic(ico)}),h('b',{style:'width:92px;flex:none;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap'},t[0])); const s=slider({min:0,max:100,step:5,value:t[1],fmt:v=>v?v:'なし',onChange:v=>t[1]=v}); s.style.flex='1'; r.append(s); const x=h('button',{class:'btn sm ghost icon',html:ic('x')}); x.onclick=()=>{ f.topics.splice(i,1); paintT(); }; r.append(x); tl.append(r); }); };
+  paintT(); const nt=h('input',{class:'field',placeholder:'トピックを追加（例：宇宙、料理、Minecraft）',style:'flex:1'}); const ab=h('button',{class:'btn',html:ic('plus')+'追加'}); ab.onclick=()=>{ const v=nt.value.trim(); if(v&&!f.topics.find(t=>t[0]===v)){ f.topics.push([v,60]); nt.value=''; paintT(); } };
+  m.append(h('label',{class:'lab'},'トピックの比重'),tl,h('div',{class:'row'},nt,ab));
+  m.append(h('label',{class:'lab'},'1回に作る投稿の数'),slider({min:3,max:12,value:f.count,fmt:v=>v+'件',onChange:v=>f.count=v}));
+  m.append(h('label',{class:'lab'},'書き方'),h('div',{class:'row',style:'font-size:12px;color:var(--ink3)'},h('span',null,'やさしい'),h('div',{style:'flex:1'},slider({min:0,max:100,value:f.tone,fmt:v=>v<34?'やさしい':v>66?'専門的':'ふつう',onChange:v=>f.tone=v})),h('span',null,'専門的')));
+  m.append(h('label',{class:'lab'},'自動で更新'),dropdown({value:f.every,items:[{v:0,t:'しない'},{v:60,t:'1時間ごと'},{v:180,t:'3時間ごと'},{v:360,t:'6時間ごと'},{v:720,t:'12時間ごと'},{v:1440,t:'1日ごと'}],onChange:v=>f.every=v}),h('div',{class:'help'},'アプリを開いたとき、前の更新から時間がたっていれば作ります。'));
+  m.append(h('div',{class:'modalFoot'},h('button',{class:'btn ghost',onclick:close},'やめる'),h('button',{class:'btn pri',onclick:async()=>{ f.prompt=pr.value; await DB.setSettings({feed:f}); close(); toast('保存しました','check'); }},'保存'))); }); }

@@ -1,0 +1,140 @@
+エージェントAi セットアップ手順
+=====================================
+
+アプリのURL：https://taiki-ikemenn.github.io/agent-ai1/
+
+安全のためのきまり
+- Gemini のキー、GitHub のトークン、Google / Spotify の接続は「その端末の中だけ」に保存されます。
+  アカウント（Firebase）には送りません。
+- アカウントに同期されるのは、チャット・プロジェクト・メモリー・ライブラリ・スケジュール・フィード・設定です。
+- Google と Spotify の「クライアントID」は秘密の情報ではないので、設定として同期されます（ほかの端末で入れ直さなくてOK）。
+
+
+0. 最初に1回だけ：GitHub Pages を公開する
+-------------------------------------
+1. https://github.com/taiki-ikemenn/agent-ai1 を開く
+2. Settings → Pages
+3. Source を「Deploy from a branch」、Branch を「main」「/(root)」にして Save
+4. 1〜2分待つと https://taiki-ikemenn.github.io/agent-ai1/ で開けます
+
+iPhone / iPad でアプリにする
+- Safari で上のURLを開く → 共有ボタン → 「ホーム画面に追加」
+- アイコン付きで、アプリのように全画面で開けます
+- 通知は「ホーム画面に追加したアプリ」で開いたときだけ使えます（iOS 16.4 以降）
+
+
+1. ログイン（Firebase：tai-account）
+-------------------------------------
+ほかの tai アカウントのアプリと同じアカウントでログインできます。
+もし「ログインできませんでした（auth/unauthorized-domain）」と出たら：
+1. https://console.firebase.google.com/ → tai-account
+2. Authentication → 設定（Settings）→ 承認済みドメイン
+3. 「taiki-ikemenn.github.io」が入っているか確認（なければ追加）
+データは Firestore の「agentai/（ユーザーID）/…」に保存されます（ほかのアプリと混ざりません）。
+
+
+2. Gemini のキー（AIの頭脳）
+-------------------------------------
+何もしなくてOKなことが多いです。
+同じサイト（taiki-ikemenn.github.io）の次のアプリに入れたキーを、この端末の中から自動で読み取ります。
+  - Home XR OS（設定のAIキー）
+  - ぼくといっしょ
+  - NaviX
+見つからないときは：カスタマイズ → 一般 → 「この端末で入力」 にキーを貼り付け。
+キーの取り方：https://aistudio.google.com/apikey → 「APIキーを作成」
+
+
+3. 天気・ブラウザ（Web検索）・Canva・Adobe Express
+-------------------------------------
+設定はいりません。
+- 天気：Open-Meteo（無料）。カスタマイズ → アプリ接続 → 天気 で「いつもの場所」を変えられます。
+- ブラウザ：Gemini の Google 検索とページ読み取りを使います。
+- Canva / Adobe Express：外から直接デザインを書きこむ方法がないため、
+  AIが「デザイン指示書」と「AIに貼る文」を作り、ボタン1つで作成ページを開きます
+  （ボタンを押すと貼る文が自動でコピーされます）。
+
+
+4. Gmail・Google連絡先・Googleフォーム・YouTube（Google の OAuth クライアントID）
+-------------------------------------
+4つとも同じ「クライアントID」を1つ作れば使えます。
+
+(1) Google Cloud のプロジェクトを開く
+    https://console.cloud.google.com/
+    上のプロジェクト選択で「tai-account」を選ぶ（Firebase と同じプロジェクトでOK）
+
+(2) API を有効にする（「APIとサービス」→「ライブラリ」で検索して「有効にする」）
+    - Gmail API
+    - People API（連絡先）
+    - Google Forms API
+    - Google Drive API（フォーム作成に必要）
+    - YouTube Data API v3
+
+(3) OAuth 同意画面（「APIとサービス」→「OAuth 同意画面」または「Google Auth Platform」）
+    - ユーザーの種類：外部
+    - アプリ名：エージェントAi、サポートメール：自分のメール
+    - 「テストユーザー」（または「対象」）に、自分の Google アカウントのメールを追加
+    ※ 公開しない「テスト中」のままで大丈夫です（自分と家族だけで使う想定）
+
+(4) クライアントIDを作る（「APIとサービス」→「認証情報」→「認証情報を作成」→「OAuth クライアント ID」）
+    - アプリケーションの種類：ウェブ アプリケーション
+    - 承認済みの JavaScript 生成元：https://taiki-ikemenn.github.io
+    - 作成 → 出てきた「クライアント ID」（〜.apps.googleusercontent.com）をコピー
+
+(5) エージェントAi で：カスタマイズ → アプリ接続 → Gmail（など）→ 接続
+    → クライアントIDを貼る → 「Googleでつなぐ」→ 許可
+
+注意
+- Google の接続は安全のため1時間で切れます。切れたら同じ画面で「再接続」を押してください。
+- 「このアプリは確認されていません」と出たら「詳細」→「（安全ではないページ）に移動」で進めます（自分で作ったアプリなので大丈夫）。
+- YouTube は接続しなくても動画を探せます（Gemini のキーで YouTube Data API v3 が有効なら API、なければ Web 検索で探します）。
+
+
+5. GitHub（トークン）
+-------------------------------------
+1. https://github.com/settings/personal-access-tokens/new （Fine-grained token）
+2. Token name：エージェントAi、Expiration：好きな期間
+3. Repository access：「All repositories」または使うリポジトリを選ぶ
+4. Permissions → Repository permissions
+     - Contents：Read and write
+     - Issues：Read and write
+     - Metadata：Read-only（自動）
+5. Generate token → 「github_pat_…」をコピー
+6. エージェントAi で：カスタマイズ → アプリ接続 → GitHub → 貼る → 「保存してたしかめる」
+コード画面の「GitHubへ」ボタンでも、このトークンを使います。
+
+
+6. Spotify（Client ID）
+-------------------------------------
+1. https://developer.spotify.com/dashboard → Spotify アカウントでログイン → 「Create app」
+2. App name：エージェントAi、App description：自分用
+3. Redirect URIs に、アプリの画面（カスタマイズ → アプリ接続 → Spotify）に表示されている URL をそのまま入れる
+     例：https://taiki-ikemenn.github.io/agent-ai1/
+     ※ 最後の「/」や「index.html」の有無まで同じにしてください
+4. 「Web API」にチェック → Save
+5. Settings → 「Client ID」をコピー
+6. User Management に、自分（使う人）の Spotify のメールと名前を追加
+7. エージェントAi で：カスタマイズ → アプリ接続 → Spotify → Client ID を貼る → 「Spotifyでつなぐ」
+注意：曲の再生・一時停止などの操作には Spotify Premium と、どこかの端末で Spotify アプリを開いておくことが必要です。
+      検索とプレイリスト作成は無料プランでも使えます。
+
+
+7. 通知
+-------------------------------------
+- スケジュール画面の「オンにする」か、カスタマイズ → 一般 → 通知 → 「許可する」
+- iPhone / iPad はホーム画面に追加したアプリから許可してください
+- 動くのはアプリを開いている間（バックグラウンドのタブを含む）です。
+  閉じていた間に過ぎたスケジュールは、次に開いたときに1回だけ実行します（24時間以内のもの）。
+
+
+8. 画像・音楽・動画をつくる
+-------------------------------------
+- 画像：まず Gemini の画像モデルを使い、無料枠で使えないときは Pollinations（無料）で作ります。
+- 音楽：AI が作曲して、ブラウザの中で演奏します。WAV で保存できます（歌はなし）。
+- 動画：AI の画像＋文字＋BGM をブラウザで組み立てて、WebM（iPhone は MP4）で書き出します。
+  書き出しは動画の長さと同じくらい時間がかかります。書き出し中は画面を開いたままにしてください。
+
+
+困ったときは
+-------------------------------------
+- 「Geminiの無料で使える回数の上限」→ 少し待つ、またはカスタマイズ → 一般 でモデルを「すばやい」に。
+- 画面が古いまま → ページを再読み込み（ホーム画面アプリは一度閉じて開き直す）。
