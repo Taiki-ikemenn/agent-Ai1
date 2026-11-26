@@ -2,8 +2,8 @@
 // キーはアカウントに保存しない。同じサイトのほかのアプリ（Home XR OS・ぼくといっしょ・NaviX）からこの端末の中で読み取る
 const KEYSRC=[['xr_cfg','Home XR OS',v=>v&&v.aiKey],['chara_cfg','ぼくといっしょ',v=>v&&v.key],['navix_ai','NaviX',v=>v&&v.key]];
 function geminiKey(){ const own=LS.get('gkey',''); if(own) return {key:own,from:'この端末に入力したキー'};
-  for(const [k,name,f] of KEYSRC){ try{ const v=f(JSON.parse(localStorage.getItem(k)||'null')); if(v&&/^AIza/.test(v)) return {key:v,from:name}; }catch(e){} }
-  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.startsWith('agentai_')) continue; const v=localStorage.getItem(k)||''; const m=v.match(/AIza[0-9A-Za-z_\-]{35}/); if(m&&m[0]!==FB_CONFIG.apiKey) return {key:m[0],from:'ほかのアプリ（'+k+'）'}; }
+  for(const [k,name,f] of KEYSRC){ try{ const v=f(JSON.parse(localStorage.getItem(k)||'null')); if(v&&/^(AIza|AQ\.)/.test(v.trim())) return {key:v.trim(),from:name}; }catch(e){} }
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.startsWith('agentai_')) continue; const v=localStorage.getItem(k)||''; const m=v.match(/AIza[0-9A-Za-z_\-]{35}|AQ\.[0-9A-Za-z_\-.]{30,}/); if(m&&m[0]!==FB_CONFIG.apiKey) return {key:m[0],from:'ほかのアプリ（'+k+'）'}; }
   return {key:'',from:''}; }
 const MODELS=[{v:'gemini-2.5-flash',t:'標準',s:'Gemini 2.5 Flash・速くてかしこい',icon:'zap'},{v:'gemini-2.5-pro',t:'じっくり',s:'Gemini 2.5 Pro・むずかしい作業向け',icon:'brain'},{v:'gemini-2.5-flash-lite',t:'すばやい',s:'Gemini 2.5 Flash-Lite・軽い作業向け',icon:'rabbit'}];
 const GBASE='https://generativelanguage.googleapis.com/v1beta/models/';

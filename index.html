@@ -401,7 +401,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='1.1.0';
+const VERSION='1.1.1';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -552,8 +552,8 @@ matchMedia('(prefers-color-scheme: dark)').addEventListener('change',applyTheme)
 // キーはアカウントに保存しない。同じサイトのほかのアプリ（Home XR OS・ぼくといっしょ・NaviX）からこの端末の中で読み取る
 const KEYSRC=[['xr_cfg','Home XR OS',v=>v&&v.aiKey],['chara_cfg','ぼくといっしょ',v=>v&&v.key],['navix_ai','NaviX',v=>v&&v.key]];
 function geminiKey(){ const own=LS.get('gkey',''); if(own) return {key:own,from:'この端末に入力したキー'};
-  for(const [k,name,f] of KEYSRC){ try{ const v=f(JSON.parse(localStorage.getItem(k)||'null')); if(v&&/^AIza/.test(v)) return {key:v,from:name}; }catch(e){} }
-  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.startsWith('agentai_')) continue; const v=localStorage.getItem(k)||''; const m=v.match(/AIza[0-9A-Za-z_\-]{35}/); if(m&&m[0]!==FB_CONFIG.apiKey) return {key:m[0],from:'ほかのアプリ（'+k+'）'}; }
+  for(const [k,name,f] of KEYSRC){ try{ const v=f(JSON.parse(localStorage.getItem(k)||'null')); if(v&&/^(AIza|AQ\.)/.test(v.trim())) return {key:v.trim(),from:name}; }catch(e){} }
+  for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.startsWith('agentai_')) continue; const v=localStorage.getItem(k)||''; const m=v.match(/AIza[0-9A-Za-z_\-]{35}|AQ\.[0-9A-Za-z_\-.]{30,}/); if(m&&m[0]!==FB_CONFIG.apiKey) return {key:m[0],from:'ほかのアプリ（'+k+'）'}; }
   return {key:'',from:''}; }
 const MODELS=[{v:'gemini-2.5-flash',t:'標準',s:'Gemini 2.5 Flash・速くてかしこい',icon:'zap'},{v:'gemini-2.5-pro',t:'じっくり',s:'Gemini 2.5 Pro・むずかしい作業向け',icon:'brain'},{v:'gemini-2.5-flash-lite',t:'すばやい',s:'Gemini 2.5 Flash-Lite・軽い作業向け',icon:'rabbit'}];
 const GBASE='https://generativelanguage.googleapis.com/v1beta/models/';
@@ -1020,7 +1020,7 @@ function cardEl(c){ const d=c.data; if(c.kind==='weather'){ const ico=code=>((WC
   if(c.kind==='spotify'){ const el=h('div',{class:'fileCard'}); el.append(h('div',{class:'fi',style:`background:#1db954 url(${d.img}) center/cover;color:#fff`,html:d.img?'':ic('disc-3')}),h('div',{style:'min-width:0;flex:1',html:`<b>${esc(d.name)}</b><small>${esc(d.by)}</small>`})); const p=h('button',{class:'btn sm pri',style:'background:#1db954',html:ic('play')+'再生'}); p.onclick=async()=>{ try{ await TOOLS.spotify_control.run({action:'play',uri:d.uri}); toast('Spotifyで再生しました','disc-3'); }catch(e){ toast(e.message,'x',4000); } }; el.append(p); if(d.url) el.append(h('a',{class:'btn sm ghost',href:d.url,target:'_blank',html:ic('external-link')})); return el; }
   return null; }
 function keyHelp(){ modal((m,close)=>{ m.append(h('h3',null,'Geminiのキーが見つかりません'),h('p',{class:'muted',style:'line-height:1.8'},'エージェントAiは、同じサイトの Home XR OS などに入れた Gemini のキーを、この端末の中から自動で読み取ります（アカウントには保存しません）。ほかのアプリでキーを入れるか、ここで入力してください。'));
-  const i=h('input',{class:'field',placeholder:'AIza…',autocomplete:'off'}); m.append(i,h('div',{class:'help'},'ここに入れたキーはこの端末だけに保存されます。'),h('div',{class:'modalFoot'},h('button',{class:'btn ghost',onclick:close},'やめる'),h('button',{class:'btn pri',onclick:()=>{ if(!/^AIza/.test(i.value.trim())) return toast('キーの形がちがいます','x'); LS.set('gkey',i.value.trim()); close(); toast('キーを保存しました（この端末だけ）','check'); }},'保存'))); }); }
+  const i=h('input',{class:'field',placeholder:'AIza… または AQ.…',autocomplete:'off',autocapitalize:'off',spellcheck:false}); m.append(i,h('div',{class:'help'},'ここに入れたキーはこの端末だけに保存されます。'),h('div',{class:'modalFoot'},h('button',{class:'btn ghost',onclick:close},'やめる'),h('button',{class:'btn pri',onclick:()=>{ if(!/^(AIza|AQ\.)\S{20,}$/.test(i.value.trim())) return toast('キーの形がちがいます（AIza… または AQ. で始まるキー）','x'); LS.set('gkey',i.value.trim()); close(); toast('キーを保存しました（この端末だけ）','check'); }},'保存'))); }); }
 
 PAGES.chat=(pg,arg)=>{ pg.classList.add('chatPage'); pg.style.overflow='hidden'; const c=arg&&S.chats.find(x=>x.id===arg);
   const pdd=dropdown({value:S.curProject,items:[{v:'',t:'プロジェクトなし',icon:'circle-dashed'},...Object.values(S.projects).map(p=>({v:p.id,t:p.name,s:p.desc,icon:p.icon||'folder'}))],label:x=>x?x.t:'プロジェクトなし',right:true,onChange:v=>{ setProject(v); if(!CUR.arg) route(); }});
