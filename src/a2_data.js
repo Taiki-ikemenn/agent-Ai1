@@ -19,7 +19,9 @@ async function fbInit(){ if(FB.ready) return FB.ready; FB.ready=(async()=>{ cons
   try{ await au.getRedirectResult(FB.auth); }catch(e){}
   await new Promise(res=>{ let first=true; au.onAuthStateChanged(FB.auth,u=>{ FB.user=u; S.user=u; if(first){ first=false; res(); } BUS.emit('auth',u); }); });
 })(); return FB.ready; }
-async function signInGoogle(){ const m=FB.m; const p=new m.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
+async function signInGoogle(){ const m=FB.m; const p=new m.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'});
+  // ホーム画面アプリ（iOS）ではリダイレクト方式が戻ってこられないので、ポップアップを使う
+  try{ await m.signInWithPopup(FB.auth,p); }catch(e){ if(/popup-blocked|operation-not-supported/.test(e.code||'')) await m.signInWithRedirect(FB.auth,p); else if(!/popup-closed|cancelled-popup/.test(e.code||'')) throw e; } }
   try{ if(standalone) await m.signInWithRedirect(FB.auth,p); else await m.signInWithPopup(FB.auth,p); }catch(e){ if(/popup/.test(e.code||'')) await m.signInWithRedirect(FB.auth,p); else throw e; } }
 async function signInEmail(email,pass,create){ const m=FB.m; if(create) return m.createUserWithEmailAndPassword(FB.auth,email,pass); return m.signInWithEmailAndPassword(FB.auth,email,pass); }
 async function signOutAll(){ stopSync(); await FB.m.signOut(FB.auth); location.reload(); }

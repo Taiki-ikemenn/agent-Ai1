@@ -400,7 +400,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='1.0.0';
+const VERSION='1.0.1';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -512,7 +512,9 @@ async function fbInit(){ if(FB.ready) return FB.ready; FB.ready=(async()=>{ cons
   try{ await au.getRedirectResult(FB.auth); }catch(e){}
   await new Promise(res=>{ let first=true; au.onAuthStateChanged(FB.auth,u=>{ FB.user=u; S.user=u; if(first){ first=false; res(); } BUS.emit('auth',u); }); });
 })(); return FB.ready; }
-async function signInGoogle(){ const m=FB.m; const p=new m.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'}); const standalone=navigator.standalone||matchMedia('(display-mode: standalone)').matches;
+async function signInGoogle(){ const m=FB.m; const p=new m.GoogleAuthProvider(); p.setCustomParameters({prompt:'select_account'});
+  // ホーム画面アプリ（iOS）ではリダイレクト方式が戻ってこられないので、ポップアップを使う
+  try{ await m.signInWithPopup(FB.auth,p); }catch(e){ if(/popup-blocked|operation-not-supported/.test(e.code||'')) await m.signInWithRedirect(FB.auth,p); else if(!/popup-closed|cancelled-popup/.test(e.code||'')) throw e; } }
   try{ if(standalone) await m.signInWithRedirect(FB.auth,p); else await m.signInWithPopup(FB.auth,p); }catch(e){ if(/popup/.test(e.code||'')) await m.signInWithRedirect(FB.auth,p); else throw e; } }
 async function signInEmail(email,pass,create){ const m=FB.m; if(create) return m.createUserWithEmailAndPassword(FB.auth,email,pass); return m.signInWithEmailAndPassword(FB.auth,email,pass); }
 async function signOutAll(){ stopSync(); await FB.m.signOut(FB.auth); location.reload(); }
@@ -893,7 +895,7 @@ addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==
 function renderLogin(err){ const app=$('#app'); app.innerHTML=''; const L=h('div',{class:'login'}); L.append(h('div',{class:'orbs',html:'<i style="width:420px;height:420px;background:#4f6bff;left:-120px;top:-80px"></i><i style="width:360px;height:360px;background:#2bd9a0;right:-100px;bottom:-60px;animation-delay:-6s"></i><i style="width:260px;height:260px;background:#7a5cff;right:20%;top:10%;animation-delay:-11s"></i>'}));
   const c=h('div',{class:'lc'}); c.append(h('img',{src:LOGO_URL,alt:''}),h('h1',null,'エージェントAi'),h('p',null,'調べる・作る・送るまで、ぜんぶ手伝うAIエージェント。データはアカウントに保存して、どの端末でも続きから。'));
   const g=h('button',{class:'btn',html:`<svg viewBox="0 0 24 24" width="18" height="18"><path fill="#4285F4" d="M23.5 12.3c0-.8-.1-1.6-.2-2.3H12v4.5h6.5a5.6 5.6 0 0 1-2.4 3.6v3h3.9c2.2-2.1 3.5-5.1 3.5-8.8z"/><path fill="#34A853" d="M12 24c3.2 0 6-1.1 7.9-2.9l-3.9-3c-1.1.7-2.4 1.2-4 1.2-3.1 0-5.7-2.1-6.6-4.9h-4v3.1A12 12 0 0 0 12 24z"/><path fill="#FBBC05" d="M5.4 14.4a7.2 7.2 0 0 1 0-4.7V6.6h-4a12 12 0 0 0 0 10.8z"/><path fill="#EA4335" d="M12 4.8c1.8 0 3.3.6 4.6 1.8l3.4-3.4A12 12 0 0 0 1.4 6.6l4 3.1C6.3 6.9 8.9 4.8 12 4.8z"/></svg>Googleでログイン`});
-  g.onclick=async()=>{ g.disabled=true; try{ await signInGoogle(); }catch(e){ toast('ログインできませんでした：'+(e.code||e.message),'x',4000); } g.disabled=false; };
+  g.onclick=async()=>{ g.disabled=true; try{ await signInGoogle(); }catch(e){ toast('Googleでログインできませんでした（'+(e.code||e.message)+'）。下の「メールアドレスでログイン」も使えます','x',6000); } g.disabled=false; };
   const em=h('button',{class:'btn alt',html:ic('mail')+'メールアドレスでログイン'}); em.onclick=()=>emailLogin();
   c.append(g,em,h('div',{class:'feat',html:`<span>${ic('cloud')}端末をまたいで同期</span><span>${ic('shield-check')}キーは端末の中だけ</span><span>${ic('wifi-off')}アプリを開いている間だけ動く</span>`}));
   if(err) c.append(h('p',{style:'color:#fca5a5;margin-top:14px'},err)); L.append(c); app.append(L); }
