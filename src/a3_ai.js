@@ -24,14 +24,28 @@ async function imageModels(){ const list=await listModels(); return list.filter(
 async function geminiRaw(model,body,signal){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
   const r=await fetch(GBASE+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':k},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({})); if(!r.ok){ const er=j.error||{}; const e=new Error(er.message||('HTTP '+r.status)); e.status=r.status; e.model=model; const ri=(er.details||[]).find(d=>/RetryInfo/.test(d['@type']||'')); e.retry=ri?parseFloat(ri.retryDelay)||0:0; e.daily=/PerDay|per day|_day/i.test(JSON.stringify(er)); e.zero=/limit: 0\b|limit:0\b/.test(er.message||''); throw e; } return j; }
+// 文字を少しずつ受けとる（SSE）。部品はまとめなおして、関数呼び出しの署名も保つ
+async function geminiStreamRaw(model,body,signal,onDelta){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
+  const r=await fetch(GBASE+encodeURIComponent(model)+':streamGenerateContent?alt=sse',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':k},body:JSON.stringify(body)});
+  if(!r.ok){ const j=await r.json().catch(()=>({})); const er=(Array.isArray(j)?j[0]:j).error||{}; const e=new Error(er.message||('HTTP '+r.status)); e.status=r.status; e.model=model; const ri=(er.details||[]).find(d=>/RetryInfo/.test(d['@type']||'')); e.retry=ri?parseFloat(ri.retryDelay)||0:0; e.daily=/PerDay|per day|_day/i.test(JSON.stringify(er)); e.zero=/limit: 0\b|limit:0\b/.test(er.message||''); throw e; }
+  if(!r.body||!r.body.getReader){ const t=await r.text(); return parseSSE(t,onDelta); }
+  const rd=r.body.getReader(), dec=new TextDecoder(); let buf='', st={parts:[],finish:'',gm:null,text:''};
+  for(;;){ const {done,value}=await rd.read(); if(done) break; buf+=dec.decode(value,{stream:true}); let i; while((i=buf.indexOf('\n'))>=0){ const line=buf.slice(0,i).trim(); buf=buf.slice(i+1); if(line.startsWith('data:')) sseChunk(line.slice(5).trim(),st,onDelta); } }
+  if(buf.trim().startsWith('data:')) sseChunk(buf.trim().slice(5).trim(),st,onDelta);
+  return {candidates:[{content:{role:'model',parts:st.parts},finishReason:st.finish,groundingMetadata:st.gm}]}; }
+function parseSSE(t,onDelta){ const st={parts:[],finish:'',gm:null,text:''}; t.split('\n').forEach(l=>{ l=l.trim(); if(l.startsWith('data:')) sseChunk(l.slice(5).trim(),st,onDelta); }); return {candidates:[{content:{role:'model',parts:st.parts},finishReason:st.finish,groundingMetadata:st.gm}]}; }
+function sseChunk(s,st,onDelta){ if(!s||s==='[DONE]') return; let j; try{ j=JSON.parse(s); }catch(e){ return; } const c=j.candidates&&j.candidates[0]; if(!c) return; if(c.finishReason) st.finish=c.finishReason; if(c.groundingMetadata) st.gm=c.groundingMetadata;
+  for(const p of ((c.content&&c.content.parts)||[])){ const last=st.parts[st.parts.length-1]; const isT=x=>x&&x.text!=null&&!x.functionCall;
+    if(isT(p)&&isT(last)&&!!p.thought===!!last.thought){ last.text+=p.text; if(p.thoughtSignature) last.thoughtSignature=p.thoughtSignature; } else st.parts.push({...p});
+    if(p.text&&!p.thought){ st.text+=p.text; onDelta&&onDelta(st.text); } } }
 // 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。
 // 1分あたりの回数オーバーは、まず別のモデル（回数は別々）を試し、全部だめなら少し待ってもう一周
-async function gemini(roleOrModel,body,signal,{maxWait=25,rounds=2}={}){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
+async function gemini(roleOrModel,body,signal,{maxWait=25,rounds=2,stream}={}){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
   const grounding=/google_search|url_context/.test(JSON.stringify(body.tools||[])); // 検索の上限でモデル自体を「使えない」と覚えないように
   const mark=(m,ms)=>{ if(grounding) return; MODEL.bad[m]=Date.now()+ms; LS.set('modelBad',MODEL.bad); };
   for(let r=0;r<rounds;r++){ let wait=0, tried=0;
     for(const m of chain){ if(MODEL.bad[m]>Date.now()&&chain.some(x=>!(MODEL.bad[x]>Date.now()))) continue; tried++;
-      for(let t=0;t<2;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m&&!grounding){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
+      for(let t=0;t<2;t++){ try{ const j=stream?await geminiStreamRaw(m,body,signal,stream):await geminiRaw(m,body,signal); if(MODEL.work[role]!==m&&!grounding){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
         catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
           if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ mark(m,24*3600e3); break; }
           if(e.status===429){ if(e.zero) mark(m,24*3600e3); else if(e.daily) mark(m,30*60e3); else wait=Math.max(wait,e.retry||6); break; }
@@ -54,6 +68,7 @@ function sysPrompt(extra=''){ const st=S.settings, ins=st.instr||{}, p=curProjec
 今日は ${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${'日月火水木金土'[now.getDay()]}）${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}。ユーザーの地域：${(st.conn.weather&&st.conn.weather.place)||'日本'}。
 返答の言語：${ins.lang==='en'?'英語':'日本語'}。話し方：${form}。長さ：${len}。${det}。絵文字は使わない。
 最新の情報・ニュース・値段・人物などは推測せず web_search で調べ、出典を示す。ファイルやコードを渡すときは必ず create_file を呼ぶ（呼ばずに「ファイルを作りました」「ダウンロードできます」と言ってはいけない）。画像・音楽・動画は create_image / create_music / create_video を使う。既存の曲を聴きたいときは spotify_search（なければ youtube_search）でプレーヤーを出す。
+大事な前提があいまいなとき（好みや条件で結果が大きく変わる作業）は、作り始める前に ask_user で選択肢つきの質問をまとめて聞く（ふつうの雑談では聞かない）。
 ユーザーについて長く役立つ事実（好み・家族・持ち物・目標など）を知ったら memory_save で覚える。ほかのチャットの内容が必要なら search_chats を使う。
 メールの送信・ファイルの上書き・GitHubへの書きこみなど、取り消しにくい操作は、内容を見せて確認を取ってから行う。
 使えるアプリ接続：${conns||'なし'}。
@@ -69,12 +84,12 @@ async function attPart(a){ try{ if(a.text!=null) return {text:`【ファイル�
 /* ---------- エージェントの動き（考える→道具→たしかめる→答える） ---------- */
 function codeBlocksToFiles(res){ const ext={html:'html',htm:'html',css:'css',javascript:'js',js:'js',python:'py',py:'py',json:'json',svg:'svg',markdown:'md',md:'md',csv:'csv',txt:'txt',text:'txt',ts:'ts',typescript:'ts'}; let n=0;
   for(const m of String(res.text).matchAll(/```\s*([\w+#.-]*)[^\n]*\n([\s\S]*?)```/g)){ const lang=(m[1]||'txt').toLowerCase(); const e=ext[lang]||'txt'; const content=m[2].replace(/\n$/,''); if(content.length<20) continue; n++; const name=(e==='html'&&!res.files.some(f=>f.name==='index.html'))?'index.html':`file${n}.${e}`; res.files.push({name,content,size:new Blob([content]).size,note:'返事の中のコードから作りました'}); } }
-async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter,force=[]}){ const model=S.settings.model||'lite';
+async function runAgent({msgs,onStep,onText,signal,extraSys='',ctx={},maxRounds=12,toolFilter,force=[]}){ const model=S.settings.model||'lite';
   const decls=toolDecls(toolFilter); force=force.filter(n=>decls.some(d=>d.name===n)); if(force.length) extraSys+=`\nユーザーは @ で道具を指定しました。必ず次の道具を使って答えること：${force.join('、')}`; const contents=await toContents(msgs); const sys=sysPrompt(extraSys); const res={text:'',files:[],media:[],sources:[],steps:[],cards:[],actions:[]};
   ctx={...ctx,res,signal};
   let nudge=false, nudged=false, promised='';
   for(let round=0;round<maxRounds;round++){ let j;
-    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7},toolConfig:(round===0&&force.length)?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:force}}:nudge?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:['create_file']}}:undefined},signal); }
+    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7},toolConfig:(round===0&&force.length)?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:force}}:nudge?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:['create_file']}}:undefined},signal,{stream:t=>onText&&onText(t,round)}); }
     catch(e){ throw e; }
     const cand=j.candidates&&j.candidates[0]; const parts=(cand&&cand.content&&cand.content.parts)||[]; const calls=parts.filter(p=>p.functionCall);
     const txt=parts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');
