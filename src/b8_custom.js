@@ -48,7 +48,7 @@ function customGeneral(b){ const st=S.settings; const k=geminiKey();
   const keyRow=h('div'); const paintKey=()=>{ const g=geminiKey(); keyRow.innerHTML=''; keyRow.append(setRow('Gemini のキー',g.key?`${g.from} から読み取り中（${g.key.slice(0,6)}…${g.key.slice(-4)}）`:'見つかりません',h('div',{class:'row'},LS.get('gkey','')?h('button',{class:'btn sm ghost',onclick:()=>{ LS.del('gkey'); paintKey(); }},'入力したキーを消す'):'',h('button',{class:'btn sm',onclick:()=>{ keyHelp(); }},'この端末で入力')))); }; paintKey();
   b.append(h('div',{class:'card'},
     setRow('テーマ','',segmented([['light','ライト','sun'],['dark','ダーク','moon'],['auto','自動','monitor']],st.theme,v=>DB.setSettings({theme:v}))),
-    setRow('AIのモデル','使用中：'+(MODEL.work[roleOf(st.model)]||'まだ使っていません')+'（新しいモデルを自動で選びます）',dropdown({value:roleOf(st.model),right:true,items:MODELS,onChange:v=>DB.setSettings({model:v})})),
+    setRow('AIのモデル','使用中：'+(MODEL.work[roleOf(st.model)]||'まだ使っていません')+'（使えないときは自動で切りかえます）',dropdown({value:roleOf(st.model),right:true,items:MODELS,onChange:v=>DB.setSettings({model:v})})),
     keyRow,
     setRow('通知','終わった作業やスケジュールの結果を知らせます',h('div',{class:'row'},('Notification' in window)&&Notification.permission!=='granted'?h('button',{class:'btn sm',onclick:async()=>{ await askNotify(); route(); }},'許可する'):'',toggle(st.notify,v=>DB.setSettings({notify:v})))),
     setRow('サイドバーを細くする','パソコンの画面で、アイコンだけにします',toggle(!!st.sideMini,v=>DB.setSettings({sideMini:v})))));
