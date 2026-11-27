@@ -565,3 +565,39 @@ body.lightSide .side{--sideInk:#3b4660;--sideInk2:#7a86a3;color:#3b4660}body.lig
 .scGrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:4px 16px}
 .scRow{display:flex;align-items:center;justify-content:space-between;border:0;background:none;padding:8px 6px;border-bottom:1px solid var(--line);font-size:14px;text-align:left}.scRow:hover{background:var(--panel2)}
 kbd{display:inline-block;min-width:24px;padding:2px 7px;margin-left:4px;border-radius:7px;border:1px solid var(--line2);border-bottom-width:2px;background:var(--panel);font-family:var(--font);font-size:12px;text-align:center}
+
+/* コード画面のレイアウト */
+.codeWork{min-height:0}
+.codeTabs{gap:4px;flex:none}
+.codeSplit .seg button{padding:6px 9px}.codeSplit .seg button svg{margin:0}
+.pvResize{height:7px;flex:none;cursor:row-resize;background:var(--line);position:relative;touch-action:none}.pvResize::after{content:"";position:absolute;left:50%;top:2px;width:40px;height:3px;border-radius:3px;background:var(--line2);transform:translateX(-50%)}
+.pvResize:hover{background:color-mix(in srgb,var(--acc) 35%,var(--line))}
+.preview{flex:none;min-height:120px}
+.codeWork[data-s=code] .preview,.codeWork[data-s=code] .pvResize{display:none}
+.codeWork[data-s=preview] .editor,.codeWork[data-s=preview] .pvResize{display:none}
+.codeWork[data-s=preview] .preview{flex:1;height:auto!important;border-top:0}
+.editor.wrapOn .ln{display:none}
+.editor.wrapOn textarea,.editor.wrapOn pre{white-space:pre-wrap;word-break:break-all;overflow-wrap:anywhere;padding-left:14px}
+.editor.wrapOn .edw{overflow-x:hidden}
+.codeModes{display:none}
+@media (max-width:860px){
+  .codePage{flex-direction:column}
+  .codeModes{display:flex;justify-content:center;padding:8px;border-bottom:1px solid var(--line);background:var(--panel);flex:none}
+  .codeModes .seg{width:100%;max-width:420px}.codeModes .seg button{flex:1;justify-content:center}
+  .codeChat{width:auto!important;height:auto!important;flex:1;min-height:0;border:0!important}
+  .codePage[data-m=chat] .codeWork{display:none}
+  .codePage:not([data-m=chat]) .codeChat{display:none}
+  .codeWork{flex:1}
+  .codeSplit,.pvResize{display:none!important}
+  .codePage[data-m=code] .preview{display:none}
+  .codePage[data-m=code] .editor{display:flex!important}
+  .codePage[data-m=preview] .editor,.codePage[data-m=preview] .codeTabs{display:none!important}
+  .codePage[data-m=preview] .preview{display:flex!important;flex:1;height:auto!important;border-top:0}
+  .editor textarea,.editor pre,.editor .ln{font-size:12px}
+  .preview .pvh .lbl{display:none}
+}
+
+.fileCard{flex-wrap:wrap;row-gap:8px}
+.fcName{flex:1;min-width:120px}.fcName b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.fcName small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fcActs{display:flex;gap:4px;align-items:center;margin-left:auto;flex-wrap:wrap;justify-content:flex-end}
+.codeChat .fileCard .fcActs{width:100%}
