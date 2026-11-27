@@ -45,7 +45,7 @@ const MENTIONS=[
   {id:'slides',name:'スライド',icon:'presentation',color:'#7a5cff',tools:['create_slides'],keys:'slide すらいど ぷれぜん はっぴょう'},
   {id:'chart',name:'グラフ',icon:'chart-column',color:'#0ea5e9',tools:['create_chart'],keys:'chart ぐらふ'},
   {id:'qr',name:'QRコード',icon:'qr-code',color:'#334155',tools:['create_qr'],keys:'qr きゅーあーる'},
-  {id:'apps',name:'マイアプリ',icon:'layout-grid',color:'#ec4899',tools:['save_app'],keys:'app あぷり まいあぷり'},
+  {id:'apps',name:'マイアプリ',icon:'layout-grid',color:'#ec4899',tools:['save_app','my_apps_list','my_app_read'],keys:'app あぷり まいあぷり うわがき'},
   {id:'plan',name:'計画',icon:'list-checks',color:'#7a5cff',tools:['plan_set'],keys:'plan けいかく てじゅん'},
   {id:'calc',name:'計算',icon:'calculator',color:'#22c55e',tools:['run_javascript'],keys:'calc けいさん javascript'}];
 function mentionInfo(m){ const c=m.conn&&CONNS.find(x=>x.id===m.conn); return {icon:m.icon||(c&&c.icon)||'at-sign',color:m.color||(c&&c.color)||'#4f6bff',desc:c?c.desc:(TOOLS[m.tools[0]]?TOOLS[m.tools[0]].decl.description.slice(0,40):''),ok:!c||connOk(c)}; }

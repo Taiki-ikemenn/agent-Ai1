@@ -627,7 +627,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='3.0.2';
+const VERSION='3.0.3';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1374,7 +1374,7 @@ const MENTIONS=[
   {id:'slides',name:'スライド',icon:'presentation',color:'#7a5cff',tools:['create_slides'],keys:'slide すらいど ぷれぜん はっぴょう'},
   {id:'chart',name:'グラフ',icon:'chart-column',color:'#0ea5e9',tools:['create_chart'],keys:'chart ぐらふ'},
   {id:'qr',name:'QRコード',icon:'qr-code',color:'#334155',tools:['create_qr'],keys:'qr きゅーあーる'},
-  {id:'apps',name:'マイアプリ',icon:'layout-grid',color:'#ec4899',tools:['save_app'],keys:'app あぷり まいあぷり'},
+  {id:'apps',name:'マイアプリ',icon:'layout-grid',color:'#ec4899',tools:['save_app','my_apps_list','my_app_read'],keys:'app あぷり まいあぷり うわがき'},
   {id:'plan',name:'計画',icon:'list-checks',color:'#7a5cff',tools:['plan_set'],keys:'plan けいかく てじゅん'},
   {id:'calc',name:'計算',icon:'calculator',color:'#22c55e',tools:['run_javascript'],keys:'calc けいさん javascript'}];
 function mentionInfo(m){ const c=m.conn&&CONNS.find(x=>x.id===m.conn); return {icon:m.icon||(c&&c.icon)||'at-sign',color:m.color||(c&&c.color)||'#4f6bff',desc:c?c.desc:(TOOLS[m.tools[0]]?TOOLS[m.tools[0]].decl.description.slice(0,40):''),ok:!c||connOk(c)}; }
@@ -1702,7 +1702,7 @@ PAGES.code=async(pg,arg)=>{ topBar('コード',{icon:'code-xml'}); pg.style.over
   topBar('',{icon:'code-xml',right:[back,name,appB,zipB,ghB,pubB,openB]}); $('#top h1').style.display='none';
   const page=h('div',{class:'codePage'}); pg.append(page); const left=h('div',{class:'codeChat'}), work=h('div',{class:'codeWork'}); page.append(left,work);
   // 左：AIチャット
-  const chat=chatView(left,{chatId:d.chat||'',kind:'code',compact:true,extraSys:CODE_SYS,placeholder:'作りたいものや直したいところを頼む…',toolFilter:t=>t.group==='code'||['web_search','read_webpage','create_image','memory_save','memory_search','run_javascript','github_repos','github_read','github_list','github_write','github_publish','save_app','create_chart','create_qr','ask_user','plan_set','plan_update'].includes(t.decl.name),onChat:id=>DB.put('codeprojects',arg,{chat:id}),
+  const chat=chatView(left,{chatId:d.chat||'',kind:'code',compact:true,extraSys:CODE_SYS,placeholder:'作りたいものや直したいところを頼む…',toolFilter:t=>t.group==='code'||['web_search','read_webpage','create_image','memory_save','memory_search','run_javascript','github_repos','github_read','github_list','github_write','github_publish','save_app','my_apps_list','my_app_read','create_chart','create_qr','ask_user','plan_set','plan_update'].includes(t.decl.name),onChat:id=>DB.put('codeprojects',arg,{chat:id}),
     emptyEl:()=>h('div',{class:'welcome',style:'padding:30px 4px'},h('div',{class:'orb',html:ic('code-xml')}),h('h2',{style:'font-size:22px'},'何を作りましょう？'),h('p',null,'例：「ブロック崩しを作って」「ボタンをもっとおしゃれに」「スマホでも見やすくして」'))});
   // 右：エディタ
   const tabs=h('div',{class:'codeTabs',style:'overflow-x:auto'}); const ed=h('div',{class:'editor'}); const ln=h('div',{class:'ln'}), edw=h('div',{class:'edw'}), pre=h('pre'), ta=h('textarea',{spellcheck:false,autocapitalize:'off',autocomplete:'off'}); edw.append(pre,ta); ed.append(ln,edw);
@@ -1964,8 +1964,17 @@ PAGES.apps=pg=>{ topBar('マイアプリ',{icon:'layout-grid'}); const w=h('div'
       mb.onclick=e=>{ e.stopPropagation(); popMenu(mb,[{t:'開く',icon:'play',on:()=>runApp(a.id)},{t:'名前・アイコン',icon:'palette',on:()=>editAppMeta(a)},{t:'コード画面で編集',icon:'code-xml',on:async()=>{ if(a.code) go('#/code/'+a.code); else openCodeWith([{name:'index.html',content:await appHTML(a.id)}],a.name); }},{t:'GitHub Pagesで公開',icon:'globe',on:async()=>publishPages({name:a.name,files:[{name:'index.html',content:await appHTML(a.id)}],appId:a.id})},...(a.url?[{t:'公開ページを開く',icon:'external-link',on:()=>window.open(a.url,'_blank')}]:[]),{t:'HTMLを保存',icon:'download',on:async()=>downloadText(await appHTML(a.id),a.name+'.html')},'sep',{t:'削除',icon:'trash-2',danger:true,on:async()=>{ if(await confirmBox('アプリを削除',`「${a.name}」を削除します。`,'削除',true)){ await DB.del('apps',a.id); DB.del('appdata',a.id).catch(()=>{}); } }}]); };
       t.append(ico,h('b',null,a.name),a.url?h('small',{html:ic('globe')+'公開中'}):'',mb); grid.append(t); }); };
   paint(); const off=BUS.on('apps',paint); CUR.cleanup=off; };
-tool('save_app',{icon:'layout-grid',label:a=>'マイアプリに入れる：'+short(a.name),desc:'作ったHTML（ゲームやツール）をユーザーの「マイアプリ」に保存して、すぐ遊べるようにする。HTMLは1つのファイルにまとめて全部書く。',params:OBJ({name:T('string','アプリの名前'),html:T('string','HTML全体（CSS/JSを中に含める）'),icon:T('string','アイコン',{enum:APP_ICONS})},['name','html']),
-  run:async(a,ctx)=>{ const id=await saveApp({name:a.name,html:a.html,icon:a.icon}); ctx.res.files.push({name:a.name+'.html',content:a.html,size:a.html.length,note:'マイアプリに入れました'}); ctx.res.actions.push({label:'マイアプリで開く',url:'#/apps',icon:'layout-grid'}); return {ok:true,id}; }});
+tool('my_apps_list',{icon:'layout-grid',label:()=>'マイアプリの一覧を見る',desc:'ユーザーのマイアプリの一覧（idと名前）を見る。既存のアプリを直す・上書きするときに先に使う',params:OBJ({}),
+  run:async()=>({apps:(S.apps||[]).slice().sort((a,b)=>(b.updated||0)-(a.updated||0)).map(a=>({id:a.id,name:a.name,updated:fmtDT(a.updated),kb:Math.round((a.size||0)/1024)}))})});
+tool('my_app_read',{icon:'file-code',label:a=>'マイアプリの中身を読む：'+short(((S.apps||[]).find(x=>x.id===a.app_id)||{}).name||a.app_id,24),desc:'マイアプリのHTMLを読む（直す前に今の中身を見るため）',params:OBJ({app_id:T('string','アプリのid（my_apps_list で調べる）')},['app_id']),
+  run:async a=>{ const ap=(S.apps||[]).find(x=>x.id===a.app_id); if(!ap) return {error:'そのidのアプリはありません。my_apps_list で調べてください'}; const html=await appHTML(ap.id); return {name:ap.name,html:html.slice(0,80000),truncated:html.length>80000}; }});
+tool('save_app',{icon:'layout-grid',label:a=>(a.app_id?'マイアプリを上書き：':'マイアプリに入れる：')+short(a.name||((S.apps||[]).find(x=>x.id===a.app_id)||{}).name,24),desc:'作ったHTML（ゲームやツール）をユーザーの「マイアプリ」に保存する。HTMLは1つのファイルにまとめて全部書く。新しく入れるときは app_id なし。すでにあるアプリを直した・作り直したときは、my_apps_list で id を調べて app_id を指定すると上書きする（アイコン・セーブデータはそのまま）。どちらにするかあいまいなら ask_user で聞く。',
+  params:OBJ({name:T('string','アプリの名前（上書きのときは省略すると今の名前のまま）'),html:T('string','HTML全体（CSS/JSを中に含める）'),icon:T('string','アイコン（新しく入れるとき）',{enum:APP_ICONS}),app_id:T('string','上書きするアプリのid（新しく入れるときは空）')},['html']),
+  run:async(a,ctx)=>{ let ex=a.app_id?(S.apps||[]).find(x=>x.id===a.app_id):null; if(a.app_id&&!ex) return {error:'そのidのアプリはありません。my_apps_list で調べてください'};
+    if(!ex&&a.name){ const same=(S.apps||[]).find(x=>x.name===a.name); if(same&&ctx.confirm&&await ctx.confirm('同じ名前のアプリがあります',`「${a.name}」はもうマイアプリにあります。\n上書きしますか？（「やめる」を押すと、別のアプリとして追加します）`,'上書きする')) ex=same; }
+    else if(ex&&ctx.confirm&&!await ctx.confirm('マイアプリを上書きしますか？',`「${ex.name}」を新しい内容に置きかえます。\n（アイコンとゲームのセーブデータはそのまま）`,'上書きする')) return {ok:false,note:'ユーザーが上書きをやめました。新しく入れる場合は app_id なしで呼んでください'};
+    const name=a.name||(ex&&ex.name)||'マイアプリ'; const id=await saveApp({name,html:a.html,icon:ex?ex.icon:a.icon,color:ex&&ex.color,code:ex&&ex.code,id:ex&&ex.id});
+    ctx.res.files.push({name:name+'.html',content:a.html,size:a.html.length,note:ex?'マイアプリを上書きしました':'マイアプリに入れました'}); ctx.res.actions.push({label:'マイアプリで開く',url:'#/apps',icon:'layout-grid'}); return {ok:true,id,overwritten:!!ex}; }});
 /* ---------- GitHub Pages で公開 ---------- */
 async function publishPages({name,files,appId,codeId}){ if(!SEC.get('github')){ toast('先に カスタマイズ → アプリ接続 で GitHub をつないでね','info',3500); return; }
   modal((m,close)=>{ const me=SEC.get('github').user; const slug=String(name||'my-app').toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/^-+|-+$/g,'')||('app-'+Date.now().toString(36));
