@@ -53,7 +53,7 @@ function sysPrompt(extra=''){ const st=S.settings, ins=st.instr||{}, p=curProjec
   return `あなたは「エージェントAi」。ユーザーの作業を実際に手伝うAIエージェントです。会話だけで終わらせず、必要なら道具（関数）を使って調べる・作る・保存する・送るところまで進めてください。
 今日は ${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日（${'日月火水木金土'[now.getDay()]}）${now.getHours()}:${String(now.getMinutes()).padStart(2,'0')}。ユーザーの地域：${(st.conn.weather&&st.conn.weather.place)||'日本'}。
 返答の言語：${ins.lang==='en'?'英語':'日本語'}。話し方：${form}。長さ：${len}。${det}。絵文字は使わない。
-最新の情報・ニュース・値段・人物などは推測せず web_search で調べ、出典を示す。ファイルやコードを渡すときは create_file を使う（コードは会話にも \`\`\` で示す）。画像・音楽・動画は create_image / create_music / create_video を使う。既存の曲を聴きたいときは spotify_search（なければ youtube_search）でプレーヤーを出す。
+最新の情報・ニュース・値段・人物などは推測せず web_search で調べ、出典を示す。ファイルやコードを渡すときは必ず create_file を呼ぶ（呼ばずに「ファイルを作りました」「ダウンロードできます」と言ってはいけない）。画像・音楽・動画は create_image / create_music / create_video を使う。既存の曲を聴きたいときは spotify_search（なければ youtube_search）でプレーヤーを出す。
 ユーザーについて長く役立つ事実（好み・家族・持ち物・目標など）を知ったら memory_save で覚える。ほかのチャットの内容が必要なら search_chats を使う。
 メールの送信・ファイルの上書き・GitHubへの書きこみなど、取り消しにくい操作は、内容を見せて確認を取ってから行う。
 使えるアプリ接続：${conns||'なし'}。
@@ -67,15 +67,23 @@ async function toContents(msgs){ const out=[]; for(const m of msgs){ if(m.role==
 async function attPart(a){ try{ if(a.text!=null) return {text:`【ファイル：${a.name}】\n${a.text.slice(0,200000)}`}; let data=a.data; if(!data){ const b=await IDB.get('att_'+a.id); if(b) data=await blobToB64(b); } if(!data){ try{ const d=await FB.m.getDoc(DB.doc('atts',a.id)); if(d.exists()) data=d.data().data; }catch(e){} } if(!data) return {text:`【ファイル：${a.name}（この端末にないため読めません）】`}; return {inlineData:{mimeType:a.mime,data:data.replace(/^data:[^,]+,/,'')}}; }catch(e){ return null; } }
 
 /* ---------- エージェントの動き（考える→道具→たしかめる→答える） ---------- */
+function codeBlocksToFiles(res){ const ext={html:'html',htm:'html',css:'css',javascript:'js',js:'js',python:'py',py:'py',json:'json',svg:'svg',markdown:'md',md:'md',csv:'csv',txt:'txt',text:'txt',ts:'ts',typescript:'ts'}; let n=0;
+  for(const m of String(res.text).matchAll(/```\s*([\w+#.-]*)[^\n]*\n([\s\S]*?)```/g)){ const lang=(m[1]||'txt').toLowerCase(); const e=ext[lang]||'txt'; const content=m[2].replace(/\n$/,''); if(content.length<20) continue; n++; const name=(e==='html'&&!res.files.some(f=>f.name==='index.html'))?'index.html':`file${n}.${e}`; res.files.push({name,content,size:new Blob([content]).size,note:'返事の中のコードから作りました'}); } }
 async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter,force=[]}){ const model=S.settings.model||'lite';
   const decls=toolDecls(toolFilter); force=force.filter(n=>decls.some(d=>d.name===n)); if(force.length) extraSys+=`\nユーザーは @ で道具を指定しました。必ず次の道具を使って答えること：${force.join('、')}`; const contents=await toContents(msgs); const sys=sysPrompt(extraSys); const res={text:'',files:[],media:[],sources:[],steps:[],cards:[],actions:[]};
   ctx={...ctx,res,signal};
+  let nudge=false, nudged=false, promised='';
   for(let round=0;round<maxRounds;round++){ let j;
-    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7},toolConfig:round===0&&force.length?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:force}}:undefined},signal); }
+    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7},toolConfig:(round===0&&force.length)?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:force}}:nudge?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:['create_file']}}:undefined},signal); }
     catch(e){ throw e; }
     const cand=j.candidates&&j.candidates[0]; const parts=(cand&&cand.content&&cand.content.parts)||[]; const calls=parts.filter(p=>p.functionCall);
     const txt=parts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');
-    if(!calls.length){ res.text=txt||(cand&&cand.finishReason==='SAFETY'?'この内容にはお答えできません。':res.text||''); return res; }
+    nudge=false;
+    if(!calls.length){ const said=/(ファイル|\.(html?|js|css|py|txt|md|csv|json|svg))[^。\n]{0,30}(作り|作成|用意|保存し|まとめ)|ダウンロード(して|でき|ボタン)/.test(txt||'');
+      if(said&&!res.files.length&&!nudged&&decls.some(d=>d.name==='create_file')){ nudged=true; nudge=true; promised=txt; contents.push({role:'model',parts:[{text:txt}]},{role:'user',parts:[{text:'（システム）ファイルを作ると言いましたが、まだ create_file を呼んでいません。今すぐ create_file で、言ったとおりのファイルを中身まで全部作ってください。'}]}); continue; }
+      res.text=promised&&res.files.length?promised:(txt||promised||(cand&&cand.finishReason==='SAFETY'?'この内容にはお答えできません。':res.text||''));
+      if(said&&!res.files.length) codeBlocksToFiles(res);
+      return res; }
     contents.push({role:'model',parts});
     const outs=await Promise.all(calls.map(async p=>{ const fc=p.functionCall; const t=TOOLS[fc.name]; const step={name:fc.name,label:t?t.label(fc.args||{}):fc.name,icon:t?t.icon:'wrench',status:'run',args:fc.args}; res.steps.push(step); onStep&&onStep(res.steps);
       let out; try{ if(!t) throw new Error('この道具はありません'); out=await t.run(fc.args||{},ctx); step.status='ok'; }catch(e){ out={error:String(e&&e.message||e)}; step.status='err'; }
