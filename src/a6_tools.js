@@ -17,11 +17,21 @@ tool('search_chats',{icon:'messages-square',label:a=>'ほかのチャットを�
     return {results:out}; }});
 
 /* ---------- Web（ブラウザ） ---------- */
+async function wikiSearch(q,lang='ja',n=4){ const base=`https://${lang}.wikipedia.org/w/api.php?origin=*&format=json`; const r=await fetchT(base+'&action=query&list=search&srlimit='+n+'&srsearch='+encodeURIComponent(q),12000); const j=await r.json(); const hits=(j.query&&j.query.search)||[]; if(!hits.length) return [];
+  const r2=await fetchT(base+'&action=query&prop=extracts&exintro=1&explaintext=1&exlimit=20&redirects=1&titles='+encodeURIComponent(hits.map(x=>x.title).join('|')),12000); const j2=await r2.json(); const pages=Object.values((j2.query&&j2.query.pages)||{});
+  return hits.map(x=>{ const p=pages.find(pp=>pp.title===x.title)||{}; return {title:x.title,url:`https://${lang}.wikipedia.org/wiki/${encodeURIComponent(x.title)}`,text:(p.extract||x.snippet.replace(/<[^>]+>/g,'')).slice(0,1500)}; }); }
 tool('web_search',{icon:'search',need:'browser',label:a=>'Webで検索：'+short(a.query),desc:'Googleで最新情報を調べる。ニュース・値段・人物・営業時間など',params:OBJ({query:T('string','検索したいこと')},['query']),
-  run:async(a,ctx)=>{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{tools:[{google_search:{}}],signal:ctx.signal}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
-    src.forEach(s=>{ if(!ctx.res.sources.find(x=>x.url===s.url)) ctx.res.sources.push(s); }); return {summary:r.text,sources:src.map(s=>s.title)}; }});
+  run:async(a,ctx)=>{ try{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{tools:[{google_search:{}}],signal:ctx.signal,maxWait:8,rounds:2}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
+      src.forEach(s=>{ if(!ctx.res.sources.find(x=>x.url===s.url)) ctx.res.sources.push(s); }); if(r.text) return {summary:r.text,sources:src.map(s=>s.title)}; }catch(e){ if(e.name==='AbortError'||e.message==='NOKEY') throw e; console.warn('Google検索が使えないのでWikipediaで調べます',e); }
+    let hits=await wikiSearch(a.query,'ja').catch(()=>[]); if(hits.length<2) hits=hits.concat(await wikiSearch(a.query,'en',3).catch(()=>[]));
+    if(!hits.length) return {note:'Google検索が混み合っていて、Wikipediaにも見つかりませんでした。少し待ってからもう一度ためしてください。'};
+    hits.forEach(x=>{ if(!ctx.res.sources.find(s=>s.url===x.url)) ctx.res.sources.push({title:'wikipedia.org：'+x.title,url:x.url}); });
+    return {note:'Google検索が混み合っていたので、Wikipediaで調べた結果です（最新ニュースは含まれないことがあります）',results:hits}; }});
+async function readerFetch(url){ const r=await fetchT('https://r.jina.ai/'+url,25000,{headers:{Accept:'text/plain'}}); if(!r.ok) throw new Error('ページを読めませんでした（'+r.status+'）'); return (await r.text()).slice(0,40000); }
 tool('read_webpage',{icon:'file-search',need:'browser',label:a=>'ページを読む：'+short(a.url.replace(/^https?:\/\//,''),36),desc:'URLのページを読んで内容を取り出す',params:OBJ({url:T('string','URL'),question:T('string','そのページで知りたいこと（なければ要約）')},['url']),
-  run:async(a,ctx)=>{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{tools:[{url_context:{}}],signal:ctx.signal}); ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url}); return {content:r.text}; }});
+  run:async(a,ctx)=>{ ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url});
+    try{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{tools:[{url_context:{}}],signal:ctx.signal,maxWait:8,rounds:2}); if(r.text) return {content:r.text}; }catch(e){ if(e.name==='AbortError'||e.message==='NOKEY') throw e; }
+    return {content:await readerFetch(a.url),note:'ページの本文です。質問に合わせて読み取ってください。'}; }});
 tool('open_link',{icon:'external-link',need:'browser',label:a=>'リンクを用意：'+short(a.title||a.url),desc:'ユーザーが開けるリンクボタンをチャットに出す（地図・サイト・検索結果など）',params:OBJ({url:T('string','URL'),title:T('string','ボタンの文字')},['url']),
   run:async(a,ctx)=>{ ctx.res.actions.push({label:a.title||'開く',url:a.url,icon:'external-link'}); return {ok:true}; }});
 

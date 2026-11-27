@@ -419,7 +419,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='2.2.2';
+const VERSION='2.3.0';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -594,16 +594,22 @@ async function imageModels(){ const list=await listModels(); return list.filter(
 async function geminiRaw(model,body,signal){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
   const r=await fetch(GBASE+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':k},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({})); if(!r.ok){ const er=j.error||{}; const e=new Error(er.message||('HTTP '+r.status)); e.status=r.status; e.model=model; const ri=(er.details||[]).find(d=>/RetryInfo/.test(d['@type']||'')); e.retry=ri?parseFloat(ri.retryDelay)||0:0; e.daily=/PerDay|per day|_day/i.test(JSON.stringify(er)); e.zero=/limit: 0\b|limit:0\b/.test(er.message||''); throw e; } return j; }
-// 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。1分あたりの回数オーバーは少し待ってやり直す
-async function gemini(roleOrModel,body,signal){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
-  for(const m of chain){ for(let t=0;t<3;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
-      catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
-        if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ MODEL.bad[m]=Date.now()+24*3600e3; LS.set('modelBad',MODEL.bad); break; }
-        if(e.status===429){ if(e.zero||e.daily){ MODEL.bad[m]=Date.now()+(e.zero?24*3600e3:30*60e3); LS.set('modelBad',MODEL.bad); break; } if(t<2){ const w=Math.min(25,Math.max(3,e.retry||(t+1)*6)); BUS.emit('wait',w); await sleep(w*1000); continue; } break; }
-        if(e.status>=500&&t<1){ await sleep(2500); continue; } if(e.status>=500) break; throw e; } } }
+// 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。
+// 1分あたりの回数オーバーは、まず別のモデル（回数は別々）を試し、全部だめなら少し待ってもう一周
+async function gemini(roleOrModel,body,signal,{maxWait=25,rounds=2}={}){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
+  const grounding=/google_search|url_context/.test(JSON.stringify(body.tools||[])); // 検索の上限でモデル自体を「使えない」と覚えないように
+  const mark=(m,ms)=>{ if(grounding) return; MODEL.bad[m]=Date.now()+ms; LS.set('modelBad',MODEL.bad); };
+  for(let r=0;r<rounds;r++){ let wait=0, tried=0;
+    for(const m of chain){ if(MODEL.bad[m]>Date.now()&&chain.some(x=>!(MODEL.bad[x]>Date.now()))) continue; tried++;
+      for(let t=0;t<2;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m&&!grounding){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
+        catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
+          if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ mark(m,24*3600e3); break; }
+          if(e.status===429){ if(e.zero) mark(m,24*3600e3); else if(e.daily) mark(m,30*60e3); else wait=Math.max(wait,e.retry||6); break; }
+          if(e.status>=500&&t<1){ await sleep(2000); continue; } if(e.status>=500) break; throw e; } } }
+    if(!wait||r===rounds-1) break; const w=Math.min(maxWait,Math.max(3,wait)); BUS.emit('wait',w); await sleep(w*1000); }
   throw last||new Error('使えるモデルが見つかりません'); }
-async function geminiText(prompt,{model,sys,json=false,signal,tools}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json&&!tools) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
-  const j=await gemini(model||S.settings.model||'lite',body,signal); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^\s*```(json)?|```\s*$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
+async function geminiText(prompt,{model,sys,json=false,signal,tools,maxWait,rounds}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json&&!tools) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
+  const j=await gemini(model||S.settings.model||'lite',body,signal,{maxWait,rounds}); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^\s*```(json)?|```\s*$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
 function errText(e){ const m=String(e&&e.message||e); if(m==='NOKEY') return 'Geminiのキーが見つかりません。カスタマイズ → 一般 で確認してください。'; if(e&&e.name==='AbortError') return '止めました。';
   if(/API key not valid|API_KEY_INVALID|UNAUTHENTICATED|invalid authentication/i.test(m)) return 'Geminiのキーが使えないようです（'+m.slice(0,120)+'）。キーを確認してください。';
   if(e&&e.status===429||/quota|RESOURCE_EXHAUSTED/i.test(m)) return (e&&e.daily?'今日のGeminiの無料回数を使い切ったようです（日本時間の夕方5時ごろにリセット）。':'Geminiが混み合っているか、短い時間に呼びすぎました。1分ほど待ってからもう一度ためしてください。')+'\n（くわしく：'+(e&&e.model?e.model+' / ':'')+m.slice(0,160)+'）';
@@ -812,11 +818,21 @@ tool('search_chats',{icon:'messages-square',label:a=>'ほかのチャットを�
     return {results:out}; }});
 
 /* ---------- Web（ブラウザ） ---------- */
+async function wikiSearch(q,lang='ja',n=4){ const base=`https://${lang}.wikipedia.org/w/api.php?origin=*&format=json`; const r=await fetchT(base+'&action=query&list=search&srlimit='+n+'&srsearch='+encodeURIComponent(q),12000); const j=await r.json(); const hits=(j.query&&j.query.search)||[]; if(!hits.length) return [];
+  const r2=await fetchT(base+'&action=query&prop=extracts&exintro=1&explaintext=1&exlimit=20&redirects=1&titles='+encodeURIComponent(hits.map(x=>x.title).join('|')),12000); const j2=await r2.json(); const pages=Object.values((j2.query&&j2.query.pages)||{});
+  return hits.map(x=>{ const p=pages.find(pp=>pp.title===x.title)||{}; return {title:x.title,url:`https://${lang}.wikipedia.org/wiki/${encodeURIComponent(x.title)}`,text:(p.extract||x.snippet.replace(/<[^>]+>/g,'')).slice(0,1500)}; }); }
 tool('web_search',{icon:'search',need:'browser',label:a=>'Webで検索：'+short(a.query),desc:'Googleで最新情報を調べる。ニュース・値段・人物・営業時間など',params:OBJ({query:T('string','検索したいこと')},['query']),
-  run:async(a,ctx)=>{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{tools:[{google_search:{}}],signal:ctx.signal}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
-    src.forEach(s=>{ if(!ctx.res.sources.find(x=>x.url===s.url)) ctx.res.sources.push(s); }); return {summary:r.text,sources:src.map(s=>s.title)}; }});
+  run:async(a,ctx)=>{ try{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{tools:[{google_search:{}}],signal:ctx.signal,maxWait:8,rounds:2}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
+      src.forEach(s=>{ if(!ctx.res.sources.find(x=>x.url===s.url)) ctx.res.sources.push(s); }); if(r.text) return {summary:r.text,sources:src.map(s=>s.title)}; }catch(e){ if(e.name==='AbortError'||e.message==='NOKEY') throw e; console.warn('Google検索が使えないのでWikipediaで調べます',e); }
+    let hits=await wikiSearch(a.query,'ja').catch(()=>[]); if(hits.length<2) hits=hits.concat(await wikiSearch(a.query,'en',3).catch(()=>[]));
+    if(!hits.length) return {note:'Google検索が混み合っていて、Wikipediaにも見つかりませんでした。少し待ってからもう一度ためしてください。'};
+    hits.forEach(x=>{ if(!ctx.res.sources.find(s=>s.url===x.url)) ctx.res.sources.push({title:'wikipedia.org：'+x.title,url:x.url}); });
+    return {note:'Google検索が混み合っていたので、Wikipediaで調べた結果です（最新ニュースは含まれないことがあります）',results:hits}; }});
+async function readerFetch(url){ const r=await fetchT('https://r.jina.ai/'+url,25000,{headers:{Accept:'text/plain'}}); if(!r.ok) throw new Error('ページを読めませんでした（'+r.status+'）'); return (await r.text()).slice(0,40000); }
 tool('read_webpage',{icon:'file-search',need:'browser',label:a=>'ページを読む：'+short(a.url.replace(/^https?:\/\//,''),36),desc:'URLのページを読んで内容を取り出す',params:OBJ({url:T('string','URL'),question:T('string','そのページで知りたいこと（なければ要約）')},['url']),
-  run:async(a,ctx)=>{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{tools:[{url_context:{}}],signal:ctx.signal}); ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url}); return {content:r.text}; }});
+  run:async(a,ctx)=>{ ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url});
+    try{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{tools:[{url_context:{}}],signal:ctx.signal,maxWait:8,rounds:2}); if(r.text) return {content:r.text}; }catch(e){ if(e.name==='AbortError'||e.message==='NOKEY') throw e; }
+    return {content:await readerFetch(a.url),note:'ページの本文です。質問に合わせて読み取ってください。'}; }});
 tool('open_link',{icon:'external-link',need:'browser',label:a=>'リンクを用意：'+short(a.title||a.url),desc:'ユーザーが開けるリンクボタンをチャットに出す（地図・サイト・検索結果など）',params:OBJ({url:T('string','URL'),title:T('string','ボタンの文字')},['url']),
   run:async(a,ctx)=>{ ctx.res.actions.push({label:a.title||'開く',url:a.url,icon:'external-link'}); return {ok:true}; }});
 

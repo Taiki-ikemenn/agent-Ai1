@@ -24,16 +24,22 @@ async function imageModels(){ const list=await listModels(); return list.filter(
 async function geminiRaw(model,body,signal){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
   const r=await fetch(GBASE+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':k},body:JSON.stringify(body)});
   const j=await r.json().catch(()=>({})); if(!r.ok){ const er=j.error||{}; const e=new Error(er.message||('HTTP '+r.status)); e.status=r.status; e.model=model; const ri=(er.details||[]).find(d=>/RetryInfo/.test(d['@type']||'')); e.retry=ri?parseFloat(ri.retryDelay)||0:0; e.daily=/PerDay|per day|_day/i.test(JSON.stringify(er)); e.zero=/limit: 0\b|limit:0\b/.test(er.message||''); throw e; } return j; }
-// 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。1分あたりの回数オーバーは少し待ってやり直す
-async function gemini(roleOrModel,body,signal){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
-  for(const m of chain){ for(let t=0;t<3;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
-      catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
-        if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ MODEL.bad[m]=Date.now()+24*3600e3; LS.set('modelBad',MODEL.bad); break; }
-        if(e.status===429){ if(e.zero||e.daily){ MODEL.bad[m]=Date.now()+(e.zero?24*3600e3:30*60e3); LS.set('modelBad',MODEL.bad); break; } if(t<2){ const w=Math.min(25,Math.max(3,e.retry||(t+1)*6)); BUS.emit('wait',w); await sleep(w*1000); continue; } break; }
-        if(e.status>=500&&t<1){ await sleep(2500); continue; } if(e.status>=500) break; throw e; } } }
+// 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。
+// 1分あたりの回数オーバーは、まず別のモデル（回数は別々）を試し、全部だめなら少し待ってもう一周
+async function gemini(roleOrModel,body,signal,{maxWait=25,rounds=2}={}){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-[12]\./.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
+  const grounding=/google_search|url_context/.test(JSON.stringify(body.tools||[])); // 検索の上限でモデル自体を「使えない」と覚えないように
+  const mark=(m,ms)=>{ if(grounding) return; MODEL.bad[m]=Date.now()+ms; LS.set('modelBad',MODEL.bad); };
+  for(let r=0;r<rounds;r++){ let wait=0, tried=0;
+    for(const m of chain){ if(MODEL.bad[m]>Date.now()&&chain.some(x=>!(MODEL.bad[x]>Date.now()))) continue; tried++;
+      for(let t=0;t<2;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m&&!grounding){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
+        catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
+          if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ mark(m,24*3600e3); break; }
+          if(e.status===429){ if(e.zero) mark(m,24*3600e3); else if(e.daily) mark(m,30*60e3); else wait=Math.max(wait,e.retry||6); break; }
+          if(e.status>=500&&t<1){ await sleep(2000); continue; } if(e.status>=500) break; throw e; } } }
+    if(!wait||r===rounds-1) break; const w=Math.min(maxWait,Math.max(3,wait)); BUS.emit('wait',w); await sleep(w*1000); }
   throw last||new Error('使えるモデルが見つかりません'); }
-async function geminiText(prompt,{model,sys,json=false,signal,tools}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json&&!tools) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
-  const j=await gemini(model||S.settings.model||'lite',body,signal); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^\s*```(json)?|```\s*$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
+async function geminiText(prompt,{model,sys,json=false,signal,tools,maxWait,rounds}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json&&!tools) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
+  const j=await gemini(model||S.settings.model||'lite',body,signal,{maxWait,rounds}); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^\s*```(json)?|```\s*$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
 function errText(e){ const m=String(e&&e.message||e); if(m==='NOKEY') return 'Geminiのキーが見つかりません。カスタマイズ → 一般 で確認してください。'; if(e&&e.name==='AbortError') return '止めました。';
   if(/API key not valid|API_KEY_INVALID|UNAUTHENTICATED|invalid authentication/i.test(m)) return 'Geminiのキーが使えないようです（'+m.slice(0,120)+'）。キーを確認してください。';
   if(e&&e.status===429||/quota|RESOURCE_EXHAUSTED/i.test(m)) return (e&&e.daily?'今日のGeminiの無料回数を使い切ったようです（日本時間の夕方5時ごろにリセット）。':'Geminiが混み合っているか、短い時間に呼びすぎました。1分ほど待ってからもう一度ためしてください。')+'\n（くわしく：'+(e&&e.model?e.model+' / ':'')+m.slice(0,160)+'）';
