@@ -18,10 +18,10 @@ tool('search_chats',{icon:'messages-square',label:a=>'ほかのチャットを�
 
 /* ---------- Web（ブラウザ） ---------- */
 tool('web_search',{icon:'search',need:'browser',label:a=>'Webで検索：'+short(a.query),desc:'Googleで最新情報を調べる。ニュース・値段・人物・営業時間など',params:OBJ({query:T('string','検索したいこと')},['query']),
-  run:async(a,ctx)=>{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{model:'gemini-2.5-flash',tools:[{google_search:{}}],signal:ctx.signal}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
+  run:async(a,ctx)=>{ const r=await geminiText(`次のことをGoogle検索で調べて、わかった事実を日本語で箇条書きにまとめて（出典の名前も）。\n${a.query}`,{tools:[{google_search:{}}],signal:ctx.signal}); const gm=r.cand&&r.cand.groundingMetadata; const src=((gm&&gm.groundingChunks)||[]).map(c=>c.web).filter(Boolean).slice(0,8).map(w=>({title:w.title,url:w.uri}));
     src.forEach(s=>{ if(!ctx.res.sources.find(x=>x.url===s.url)) ctx.res.sources.push(s); }); return {summary:r.text,sources:src.map(s=>s.title)}; }});
 tool('read_webpage',{icon:'file-search',need:'browser',label:a=>'ページを読む：'+short(a.url.replace(/^https?:\/\//,''),36),desc:'URLのページを読んで内容を取り出す',params:OBJ({url:T('string','URL'),question:T('string','そのページで知りたいこと（なければ要約）')},['url']),
-  run:async(a,ctx)=>{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{model:'gemini-2.5-flash',tools:[{url_context:{}}],signal:ctx.signal}); ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url}); return {content:r.text}; }});
+  run:async(a,ctx)=>{ const r=await geminiText(`${a.url}\nこのページを読んで、${a.question||'内容をくわしく要約して'}。日本語で。`,{tools:[{url_context:{}}],signal:ctx.signal}); ctx.res.sources.push({title:a.url.replace(/^https?:\/\//,'').slice(0,60),url:a.url}); return {content:r.text}; }});
 tool('open_link',{icon:'external-link',need:'browser',label:a=>'リンクを用意：'+short(a.title||a.url),desc:'ユーザーが開けるリンクボタンをチャットに出す（地図・サイト・検索結果など）',params:OBJ({url:T('string','URL'),title:T('string','ボタンの文字')},['url']),
   run:async(a,ctx)=>{ ctx.res.actions.push({label:a.title||'開く',url:a.url,icon:'external-link'}); return {ok:true}; }});
 

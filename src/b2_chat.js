@@ -24,7 +24,7 @@ function chatView(root,{chatId='',kind='chat',toolFilter,extraSys='',compact=fal
   const attB=h('button',{class:'btn icon ghost',title:'ファイルを追加',html:ic('paperclip')}); attB.onclick=()=>fileIn.click();
   const modes=dropdown({value:'',icon:'sparkles',label:()=>'',items:[{v:'img',t:'画像を作る',icon:'image'},{v:'music',t:'音楽を作る',icon:'music'},{v:'video',t:'動画を作る',icon:'clapperboard'},{v:'web',t:'Webでくわしく調べる',icon:'search'},{v:'file',t:'ファイルにまとめる',icon:'file-plus'},'sep',{v:'mem',t:'これを覚えて',icon:'brain'}],onChange:v=>{ const pre={img:'次の画像を作って：',music:'次の曲を作って：',video:'次の動画を作って：',web:'Webでくわしく調べて、出典つきでまとめて：',file:'次の内容をファイルにまとめて：',mem:'これを覚えておいて：'}[v]; ta.value=pre+ta.value; ta.focus(); autoGrow(); modes.set(''); }});
   modes.querySelector('.ddBtn').classList.add('ghost'); modes.querySelector('.ddBtn').title='作る・調べる';
-  const model=dropdown({value:S.settings.model,items:MODELS,label:c=>c?c.t:'標準',onChange:v=>DB.setSettings({model:v})});
+  const model=dropdown({value:roleOf(S.settings.model),items:MODELS,label:c=>c?c.t:'標準',onChange:v=>DB.setSettings({model:v})});
   const mic=h('button',{class:'btn icon ghost',title:'声で入力',html:ic('mic')}); const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) mic.style.display='none';
   mic.onclick=()=>{ const r=new SR(); r.lang='ja-JP'; r.interimResults=true; const base=ta.value; mic.classList.add('pri'); r.onresult=e=>{ ta.value=base+Array.from(e.results).map(x=>x[0].transcript).join(''); autoGrow(); }; r.onend=()=>mic.classList.remove('pri'); r.start(); };
   const send=h('button',{class:'send',title:'送る',html:ic('arrow-up')}); send.onclick=()=>busy?stop():submit();
@@ -54,20 +54,20 @@ function chatView(root,{chatId='',kind='chat',toolFilter,extraSys='',compact=fal
     await answer(); }
   async function answer(){ busy=true; send.classList.add('stop'); send.innerHTML=ic('square'); send.disabled=false; abort=new AbortController(); const aid=uid();
     pendingEl=h('div',{class:'m ai'}); pendingEl.dataset.id=aid; pendingEl.append(h('div',{class:'avA',html:ic('sparkles')})); const body=h('div',{class:'body'}); const stepsBox=h('div'); const think=h('div',{class:'thinking',html:'<i><span></span><span></span><span></span></i>考えています'}); body.append(stepsBox,think); pendingEl.append(body); inner.append(pendingEl); scrollEnd(true);
-    const history=msgs.slice(-40); let res;
+    const history=msgs.slice(-40); let res; const offW=BUS.on('wait',w=>{ think.lastChild.textContent=`混み合っているので${Math.round(w)}秒待っています`; });
     try{ res=await runAgent({msgs:history,signal:abort.signal,toolFilter,extraSys,ctx:{chatId:cid,confirm:(t,b,ok)=>confirmBox(t,b,ok),...ctxExtra},onStep:st=>{ stepsBox.innerHTML=''; stepsBox.append(stepsEl(st,true)); think.lastChild.textContent=st.some(x=>x.status==='run')?'作業しています':'まとめています'; scrollEnd(); }});
       const am={id:aid,role:'model',text:res.text,at:Date.now(),steps:res.steps.map(s=>({label:s.label,icon:s.icon,status:s.status})),files:res.files.map(f=>({name:f.name,size:f.size,lib:f.lib||'',content:f.size<250000?f.content:'',note:f.note||''})),media:res.media,cards:res.cards,actions:res.actions,sources:res.sources.slice(0,10)};
       pendingEl.remove(); pendingEl=null; msgs.push(am); paintAll(); await addMsg(cid,am); await DB.put('chats',cid,{updated:Date.now(),count:msgs.length,summary:(res.text||'').slice(0,160)});
       if(msgs.length<=2) autoTitle(cid,msgs); if(document.hidden&&S.settings.notify) notify('エージェントAi',(res.text||'作業が終わりました').replace(/[#*`]/g,'').slice(0,120),'#/chat/'+cid);
     }catch(e){ pendingEl&&pendingEl.remove(); pendingEl=null; const er=h('div',{class:'m ai'}); er.append(h('div',{class:'avA',style:'background:var(--bad)',html:ic('triangle-alert')})); const b=h('div',{class:'body'}); b.append(h('p',{style:'margin:4px 0 8px'},errText(e))); const r=h('button',{class:'btn sm',html:ic('rotate-ccw')+'もう一度'}); r.onclick=()=>{ er.remove(); answer(); }; b.append(r); er.append(b); inner.append(er); scrollEnd(true); }
-    busy=false; abort=null; send.classList.remove('stop'); send.innerHTML=ic('arrow-up'); autoGrow(); }
+    offW(); busy=false; abort=null; send.classList.remove('stop'); send.innerHTML=ic('arrow-up'); autoGrow(); }
   function stop(){ abort&&abort.abort(); }
   async function regen(m){ if(busy) return; const i=msgs.indexOf(m); if(i<0) return; const rm=msgs.splice(i); for(const x of rm){ const r=rendered.get(x.id); r&&r.el.remove(); rendered.delete(x.id); if(x.role==='model') FB.m.deleteDoc(DB.doc(`chats/${cid}/msgs`,x.id)).catch(()=>{}); } msgs.push(...rm.filter(x=>x.role==='user')); await answer(); }
   function subscribe(){ unsub&&unsub(); if(!cid) return; unsub=FB.m.onSnapshot(FB.m.query(DB.col('chats',cid,'msgs'),FB.m.orderBy('at','asc')),qs=>{ if(busy) return; const local=new Map(msgs.map(m=>[m.id,m])); msgs=qs.docs.map(d=>{ const x=d.data(); const l=local.get(x.id); return l&&l.atts&&l.atts.some(a=>a.data)?l:x; }); paintAll(); }); }
   if(cid) subscribe(); else showWelcome(); setTimeout(()=>!matchMedia('(pointer:coarse)').matches&&ta.focus(),80);
   return {el:wrap,submit,get cid(){ return cid; },set text(v){ ta.value=v; autoGrow(); },focus:()=>ta.focus(),destroy(){ unsub&&unsub(); stop(); }}; }
 
-async function autoTitle(cid,msgs){ try{ const u=msgs.find(m=>m.role==='user'), a=msgs.find(m=>m.role==='model'); const r=await geminiText(`次の会話に、内容がわかる日本語のタイトルを18文字以内で1つだけつけて。記号やかぎかっこは不要。\nユーザー：${(u.text||'').slice(0,400)}\nAI：${(a.text||'').slice(0,400)}`,{model:'gemini-2.5-flash-lite'}); const t=r.text.trim().replace(/^["「『]|["」』]$/g,'').split('\n')[0].slice(0,24); if(t) await DB.put('chats',cid,{title:t}); }catch(e){} }
+async function autoTitle(cid,msgs){ try{ const u=msgs.find(m=>m.role==='user'), a=msgs.find(m=>m.role==='model'); const r=await geminiText(`次の会話に、内容がわかる日本語のタイトルを18文字以内で1つだけつけて。記号やかぎかっこは不要。\nユーザー：${(u.text||'').slice(0,400)}\nAI：${(a.text||'').slice(0,400)}`,{model:'lite'}); const t=r.text.trim().replace(/^["「『]|["」』]$/g,'').split('\n')[0].slice(0,24); if(t) await DB.put('chats',cid,{title:t}); }catch(e){} }
 
 /* ---------- AIの返事の中身 ---------- */
 function renderAI(body,m,{last,regen}={}){ body.innerHTML='';

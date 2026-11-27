@@ -2,7 +2,7 @@
 const FB_CONFIG={apiKey:"AIzaSyDNKPM8KCe6RGWuaQOUDorBtjCD3IGoe1E",authDomain:"tai-account.firebaseapp.com",databaseURL:"https://tai-account-default-rtdb.firebaseio.com",projectId:"tai-account",storageBucket:"tai-account.firebasestorage.app",messagingSenderId:"579819210756",appId:"1:579819210756:web:7eba19a9d4c2ac7697cd51"};
 const FBV='10.12.2';
 const FB={m:null,app:null,auth:null,db:null,user:null,ready:null};
-const DEF_SETTINGS={theme:'auto',model:'gemini-2.5-flash',memoryOn:true,crossChat:true,notify:true,webAuto:true,
+const DEF_SETTINGS={theme:'auto',model:'fast',memoryOn:true,crossChat:true,notify:true,webAuto:true,
   instr:{about:'',style:'',lang:'ja',length:50,formality:60,detail:60},
   conn:{google:{clientId:''},spotify:{clientId:''},github:{user:''},weather:{place:'越谷市'},youtube:{on:true},browser:{on:true},canva:{on:true},adobe:{on:true}},
   feed:{prompt:'テクノロジー、AI、ゲーム、日本のニュースを中心に。むずかしい話はやさしく。',topics:[['テクノロジー',80],['AI',90],['ゲーム',60],['科学',50],['スポーツ',20],['エンタメ',40]],count:6,every:180,tone:50},
@@ -36,7 +36,7 @@ const DB={ base(){ return ['agentai',FB.user.uid]; }, col(...p){ return FB.m.col
 function deepMerge(a,b){ const o=Array.isArray(a)?a.slice():{...a}; for(const k in b){ const v=b[k]; if(v&&typeof v==='object'&&!Array.isArray(v)&&a&&typeof a[k]==='object'&&!Array.isArray(a[k])) o[k]=deepMerge(a[k],v); else o[k]=v; } return o; }
 function stopSync(){ S.subs.forEach(f=>{ try{ f(); }catch(e){} }); S.subs=[]; }
 function startSync(){ stopSync(); const m=FB.m; const sub=(q,f)=>S.subs.push(m.onSnapshot(q,{includeMetadataChanges:false},f,e=>console.warn('sync',e)));
-  sub(m.doc(FB.db,...DB.base()),s=>{ const d=s.data()||{}; if(d.settings) S.settings=deepMerge(DEF_SETTINGS,settingsIn(d.settings)); applyTheme(); S.synced=true; BUS.emit('settings'); BUS.emit('sync'); });
+  sub(m.doc(FB.db,...DB.base()),s=>{ const d=s.data()||{}; if(d.settings){ S.settings=deepMerge(DEF_SETTINGS,settingsIn(d.settings)); S.settings.model=roleOf(S.settings.model); } applyTheme(); S.synced=true; BUS.emit('settings'); BUS.emit('sync'); });
   sub(m.query(DB.col('projects')),qs=>{ S.projects={}; qs.forEach(d=>S.projects[d.id]={id:d.id,...d.data()}); BUS.emit('projects'); });
   sub(m.query(DB.col('chats'),m.orderBy('updated','desc'),m.limit(200)),qs=>{ S.chats=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('chats'); });
   sub(m.query(DB.col('memories'),m.orderBy('at','desc'),m.limit(500)),qs=>{ S.memories=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('memories'); });

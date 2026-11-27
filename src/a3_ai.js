@@ -5,14 +5,38 @@ function geminiKey(){ const own=LS.get('gkey',''); if(own) return {key:own,from:
   for(const [k,name,f] of KEYSRC){ try{ const v=f(JSON.parse(localStorage.getItem(k)||'null')); if(v&&/^(AIza|AQ\.)/.test(v.trim())) return {key:v.trim(),from:name}; }catch(e){} }
   for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k.startsWith('agentai_')) continue; const v=localStorage.getItem(k)||''; const m=v.match(/AIza[0-9A-Za-z_\-]{35}|AQ\.[0-9A-Za-z_\-.]{30,}/); if(m&&m[0]!==FB_CONFIG.apiKey) return {key:m[0],from:'ほかのアプリ（'+k+'）'}; }
   return {key:'',from:''}; }
-const MODELS=[{v:'gemini-2.5-flash',t:'標準',s:'Gemini 2.5 Flash・速くてかしこい',icon:'zap'},{v:'gemini-2.5-pro',t:'じっくり',s:'Gemini 2.5 Pro・むずかしい作業向け',icon:'brain'},{v:'gemini-2.5-flash-lite',t:'すばやい',s:'Gemini 2.5 Flash-Lite・軽い作業向け',icon:'rabbit'}];
+// モデルは「役割」で選び、そのとき使える最新のモデルを自動で探す（Googleがモデルを入れかえても動くように）
+const MODELS=[{v:'fast',t:'標準',s:'最新の Flash・速くてかしこい',icon:'zap'},{v:'pro',t:'じっくり',s:'最新の Pro・むずかしい作業向け（無料枠では使えないことがあります）',icon:'brain'},{v:'lite',t:'すばやい',s:'最新の Flash-Lite・軽い作業向け・回数に余裕あり',icon:'rabbit'}];
+const roleOf=m=>{ m=String(m||'fast'); if(['fast','pro','lite'].includes(m)) return m; return /lite/.test(m)?'lite':/pro/.test(m)?'pro':'fast'; };
 const GBASE='https://generativelanguage.googleapis.com/v1beta/models/';
-async function gemini(model,body,signal){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
+const MODEL={list:null,work:LS.get('modelWork',{}),bad:{}};
+async function listModels(){ const c=LS.get('modelList',null); if(c&&Date.now()-c.at<6*3600e3&&c.key===geminiKey().key.slice(-6)) return c.list;
+  try{ const r=await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=1000',{headers:{'x-goog-api-key':geminiKey().key}}); const j=await r.json(); if(!r.ok) throw 0;
+    const list=(j.models||[]).filter(m=>(m.supportedGenerationMethods||[]).includes('generateContent')).map(m=>m.name.replace(/^models\//,'')); LS.set('modelList',{at:Date.now(),list,key:geminiKey().key.slice(-6)}); return list; }catch(e){ return c?c.list:[]; } }
+const verOf=n=>{ const m=n.match(/gemini-(\d+)(?:\.(\d+))?/); return m?(+m[1])*100+(+(m[2]||0)):0; };
+async function modelChain(role){ const list=await listModels(); const has=n=>!list.length||list.includes(n);
+  const pick=re=>list.filter(n=>re.test(n)&&!/(image|tts|audio|live|embed|native|computer|robotic|learnlm|aqa)/.test(n)).sort((a,b)=>verOf(b)-verOf(a)||(/preview|exp/.test(a)?1:0)-(/preview|exp/.test(b)?1:0));
+  const flash=['gemini-flash-latest',...pick(/^gemini-[\d.]+-flash(-preview[\w-]*)?$/)].filter(has), lite=['gemini-flash-lite-latest',...pick(/^gemini-[\d.]+-flash-lite(-preview[\w-]*)?$/)].filter(has), pro=['gemini-pro-latest',...pick(/^gemini-[\d.]+-pro(-preview[\w-]*)?$/)].filter(has);
+  let ch=role==='pro'?[...pro,...flash,...lite]:role==='lite'?[...lite,...flash]:[...flash,...lite]; if(!ch.length) ch=role==='lite'?['gemini-flash-lite-latest','gemini-flash-latest']:['gemini-flash-latest','gemini-flash-lite-latest'];
+  ch=[...new Set(ch)].filter(n=>!(MODEL.bad[n]>Date.now())); const w=MODEL.work[role]; if(w&&ch.includes(w)) ch=[w,...ch.filter(n=>n!==w)]; return ch; }
+async function imageModels(){ const list=await listModels(); return list.filter(n=>/flash.*image|image.*flash/.test(n)).sort((a,b)=>verOf(b)-verOf(a)).slice(0,2); }
+async function geminiRaw(model,body,signal){ const k=geminiKey().key; if(!k) throw new Error('NOKEY');
   const r=await fetch(GBASE+encodeURIComponent(model)+':generateContent',{method:'POST',signal,headers:{'Content-Type':'application/json','x-goog-api-key':k},body:JSON.stringify(body)});
-  const j=await r.json().catch(()=>({})); if(!r.ok){ const msg=(j.error&&j.error.message)||('HTTP '+r.status); const e=new Error(msg); e.status=r.status; throw e; } return j; }
-async function geminiText(prompt,{model,sys,json=false,signal,tools}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
-  const j=await gemini(model||S.settings.model||'gemini-2.5-flash',body,signal); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^```json|```$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
-function errText(e){ const m=String(e&&e.message||e); if(m==='NOKEY') return 'Geminiのキーが見つかりません。カスタマイズ → 一般 で確認してください。'; if(/quota|RESOURCE_EXHAUSTED|429/i.test(m)) return 'Geminiの無料で使える回数の上限になりました。少し待ってからもう一度ためしてください。'; if(/API key not valid|API_KEY_INVALID/i.test(m)) return 'Geminiのキーが正しくないようです。'; if(e&&e.name==='AbortError') return '止めました。'; return 'エラー：'+m; }
+  const j=await r.json().catch(()=>({})); if(!r.ok){ const er=j.error||{}; const e=new Error(er.message||('HTTP '+r.status)); e.status=r.status; e.model=model; const ri=(er.details||[]).find(d=>/RetryInfo/.test(d['@type']||'')); e.retry=ri?parseFloat(ri.retryDelay)||0:0; e.daily=/PerDay|per day|_day/i.test(JSON.stringify(er)); e.zero=/limit: 0\b|limit:0\b/.test(er.message||''); throw e; } return j; }
+// 役割（fast/pro/lite）かモデル名を受けとり、だめなら次のモデルへ。1分あたりの回数オーバーは少し待ってやり直す
+async function gemini(roleOrModel,body,signal){ const role=roleOf(roleOrModel); const chain=['fast','pro','lite'].includes(roleOrModel)||/^gemini-2\.5/.test(roleOrModel)?await modelChain(role):[roleOrModel]; let last;
+  for(const m of chain){ for(let t=0;t<3;t++){ try{ const j=await geminiRaw(m,body,signal); if(MODEL.work[role]!==m){ MODEL.work[role]=m; LS.set('modelWork',MODEL.work); BUS.emit('model'); } return j; }
+      catch(e){ last=e; if(e.name==='AbortError'||e.message==='NOKEY'||/API key|API_KEY|PERMISSION_DENIED|UNAUTHENTICATED/i.test(e.message)) throw e;
+        if(e.status===404||(e.status===400&&/not (found|supported)|unsupported model|is not available/i.test(e.message))){ MODEL.bad[m]=Date.now()+6*3600e3; break; }
+        if(e.status===429){ if(e.zero||e.daily){ MODEL.bad[m]=Date.now()+(e.zero?6*3600e3:30*60e3); break; } if(t<2){ const w=Math.min(25,Math.max(3,e.retry||(t+1)*6)); BUS.emit('wait',w); await sleep(w*1000); continue; } break; }
+        if(e.status>=500&&t<1){ await sleep(2500); continue; } if(e.status>=500) break; throw e; } } }
+  throw last||new Error('使えるモデルが見つかりません'); }
+async function geminiText(prompt,{model,sys,json=false,signal,tools}={}){ const body={contents:[{role:'user',parts:[{text:prompt}]}]}; if(sys) body.systemInstruction={parts:[{text:sys}]}; if(json&&!tools) body.generationConfig={responseMimeType:'application/json'}; if(tools) body.tools=tools;
+  const j=await gemini(model||S.settings.model||'fast',body,signal); const c=j.candidates&&j.candidates[0]; const t=((c&&c.content&&c.content.parts)||[]).filter(p=>!p.thought).map(p=>p.text||'').join(''); if(json){ try{ return JSON.parse(t.replace(/^\s*```(json)?|```\s*$/g,'')); }catch(e){ const m=t.match(/[\[{][\s\S]*[\]}]/); return m?JSON.parse(m[0]):null; } } return {text:t,cand:c}; }
+function errText(e){ const m=String(e&&e.message||e); if(m==='NOKEY') return 'Geminiのキーが見つかりません。カスタマイズ → 一般 で確認してください。'; if(e&&e.name==='AbortError') return '止めました。';
+  if(/API key not valid|API_KEY_INVALID|UNAUTHENTICATED|invalid authentication/i.test(m)) return 'Geminiのキーが使えないようです（'+m.slice(0,120)+'）。キーを確認してください。';
+  if(e&&e.status===429||/quota|RESOURCE_EXHAUSTED/i.test(m)) return (e&&e.daily?'今日のGeminiの無料回数を使い切ったようです（日本時間の夕方5時ごろにリセット）。':'Geminiが混み合っているか、短い時間に呼びすぎました。1分ほど待ってからもう一度ためしてください。')+'\n（くわしく：'+(e&&e.model?e.model+' / ':'')+m.slice(0,160)+'）';
+  return 'エラー：'+m.slice(0,300); }
 
 /* ---------- システムへの指示 ---------- */
 function sysPrompt(extra=''){ const st=S.settings, ins=st.instr||{}, p=curProject(); const now=new Date();
@@ -36,12 +60,12 @@ async function toContents(msgs){ const out=[]; for(const m of msgs){ if(m.role==
 async function attPart(a){ try{ if(a.text!=null) return {text:`【ファイル：${a.name}】\n${a.text.slice(0,200000)}`}; let data=a.data; if(!data){ const b=await IDB.get('att_'+a.id); if(b) data=await blobToB64(b); } if(!data){ try{ const d=await FB.m.getDoc(DB.doc('atts',a.id)); if(d.exists()) data=d.data().data; }catch(e){} } if(!data) return {text:`【ファイル：${a.name}（この端末にないため読めません）】`}; return {inlineData:{mimeType:a.mime,data:data.replace(/^data:[^,]+,/,'')}}; }catch(e){ return null; } }
 
 /* ---------- エージェントの動き（考える→道具→たしかめる→答える） ---------- */
-async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter}){ const model=S.settings.model||'gemini-2.5-flash';
+async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter}){ const model=S.settings.model||'fast';
   const decls=toolDecls(toolFilter); const contents=await toContents(msgs); const sys=sysPrompt(extraSys); const res={text:'',files:[],media:[],sources:[],steps:[],cards:[],actions:[]};
   ctx={...ctx,res,signal};
   for(let round=0;round<maxRounds;round++){ let j;
     try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7}},signal); }
-    catch(e){ if(e.status===404&&model!=='gemini-2.5-flash'){ S.settings.model='gemini-2.5-flash'; return runAgent({msgs,onStep,signal,extraSys,ctx,maxRounds,toolFilter}); } throw e; }
+    catch(e){ throw e; }
     const cand=j.candidates&&j.candidates[0]; const parts=(cand&&cand.content&&cand.content.parts)||[]; const calls=parts.filter(p=>p.functionCall);
     const txt=parts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');
     if(!calls.length){ res.text=txt||(cand&&cand.finishReason==='SAFETY'?'この内容にはお答えできません。':res.text||''); return res; }
