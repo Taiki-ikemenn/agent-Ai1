@@ -62,7 +62,8 @@ function chatView(root,{chatId='',kind='chat',toolFilter,extraSys='',compact=fal
   const mic=h('button',{class:'btn icon ghost',title:'声で入力',html:ic('mic')}); const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) mic.style.display='none';
   mic.onclick=()=>{ const r=new SR(); r.lang='ja-JP'; r.interimResults=true; const base=ta.value; mic.classList.add('pri'); r.onresult=e=>{ ta.value=base+Array.from(e.results).map(x=>x[0].transcript).join(''); autoGrow(); }; r.onend=()=>mic.classList.remove('pri'); r.start(); };
   const send=h('button',{class:'send',title:'送る',html:ic('arrow-up')}); send.onclick=()=>busy?stop():submit();
-  bar.append(attB,modes,model,h('div',{class:'sp'}),mic,send); box.append(cAtts,ta,bar,fileIn); comp.append(box); if(!compact) comp.append(h('div',{class:'hint'},'エージェントAiはまちがえることがあります。大事なことはたしかめてね。'));
+  const vB=h('button',{class:'btn icon ghost',title:'音声会話モード',html:ic('audio-lines')}); vB.onclick=()=>voiceMode(api);
+  bar.append(attB,modes,model,h('div',{class:'sp'}),vB,mic,send); box.append(cAtts,ta,bar,fileIn); comp.append(box); if(!compact) comp.append(h('div',{class:'hint'},'エージェントAiはまちがえることがあります。大事なことはたしかめてね。'));
   const pills=h('div',{class:'mPills'}); pills.style.display='none'; box.insertBefore(pills,ta);
   let mBox=null, mSel=0, mList=[];
   const closeM=()=>{ mBox&&mBox.remove(); mBox=null; };
@@ -185,11 +186,7 @@ function keyHelp(){ modal((m,close)=>{ m.append(h('h3',null,'Geminiのキーが�
 
 PAGES.chat=(pg,arg)=>{ pg.classList.add('chatPage'); pg.style.overflow='hidden'; const c=arg&&S.chats.find(x=>x.id===arg);
   const pdd=dropdown({value:S.curProject,items:[{v:'',t:'プロジェクトなし',icon:'circle-dashed'},...Object.values(S.projects).map(p=>({v:p.id,t:p.name,s:p.desc,icon:p.icon||'folder'}))],label:x=>x?x.t:'プロジェクトなし',right:true,onChange:v=>{ setProject(v); if(!CUR.arg) route(); }});
-  const more=dropdown({value:'',icon:'ellipsis',label:()=>'',right:true,items:[{v:'rename',t:'名前を変える',icon:'pencil'},{v:'md',t:'Markdownで保存',icon:'download'},'sep',{v:'del',t:'削除',icon:'trash-2'}],onChange:async v=>{ more.set(''); const id=view.cid; if(!id) return toast('まだ会話がありません','info'); const ch=S.chats.find(x=>x.id===id)||{};
-    if(v==='rename'){ modal((m,close)=>{ const i=h('input',{class:'field',value:ch.title||''}); m.append(h('h3',null,'名前を変える'),i,h('div',{class:'modalFoot'},h('button',{class:'btn ghost',onclick:close},'やめる'),h('button',{class:'btn pri',onclick:async()=>{ await DB.put('chats',id,{title:i.value.trim()||'チャット'}); close(); topBar(i.value.trim(),{icon:'message-square',right:[pdd,more]}); }},'保存'))); setTimeout(()=>i.select(),50); }); }
-    if(v==='md'){ const ms=await chatMsgs(id); downloadText(`# ${ch.title||'チャット'}\n\n`+ms.map(x=>(x.role==='user'?'## あなた\n':'## エージェントAi\n')+(x.text||'')).join('\n\n'),(ch.title||'chat')+'.md'); }
-    if(v==='del'&&await confirmBox('チャットを削除','このチャットを削除します。元に戻せません。','削除',true)){ await delChat(id); go('#/new'); } }});
-  more.querySelector('.ddBtn').classList.add('ghost');
+  const more=h('button',{class:'btn icon ghost',title:'チャットのメニュー',html:ic('ellipsis')}); more.onclick=()=>{ const c2=S.chats.find(x=>x.id===view.cid); if(!c2) return toast('まだ会話がありません','info'); chatMenu(c2,more); };
   topBar(c?c.title:'新しいチャット',{icon:c?'message-square':'square-pen',right:[pdd,more]});
   const view=chatView(pg,{chatId:arg,onChat:id=>{ history.replaceState(null,'','#/chat/'+id); CUR.arg=id; paintRecent(); }});
   const off=BUS.on('chats',()=>{ const cc=S.chats.find(x=>x.id===view.cid); if(cc){ const s=$('#top h1 span'); if(s) s.textContent=cc.title; } });
