@@ -591,7 +591,7 @@ const ICONS={"album": "<rect width=\"18\" height=\"18\" x=\"3\" y=\"3\" rx=\"2\"
 </script>
 <script>
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='3.0.0';
+const VERSION='3.0.1';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -1190,7 +1190,7 @@ function renderShell(){ const app=$('#app'); app.innerHTML='';
   const side=h('aside',{class:'side'}); const brand=h('div',{class:'brand',html:`<img src="${LOGO_URL}" alt=""><span>エージェントAi</span>`}); const col=h('button',{class:'collapse',title:'サイドバーを細くする',html:ic('panel-left')}); col.onclick=()=>DB.setSettings({sideMini:!S.settings.sideMini}); brand.append(col); side.append(brand);
   NAV.forEach(([id,t,i])=>{ const b=h('button',{class:'nav'+(id==='chat'?' new':''),'data-nav':id,html:ic(i)+`<span class="lbl">${t}</span>`+(id==='chat'?'<span class="kbd lbl">⌘K</span>':'')}); b.onclick=()=>{ closeDrawer(); go(id==='chat'?'#/new':'#/'+id); }; side.append(b); });
   const TOOLNAV=[['todo','ToDo','list-todo'],['calendar','カレンダー','calendar-days'],['money','家計簿','wallet'],['apps','マイアプリ','layout-grid'],['log','作業ログ','scroll-text']]; const tg=h('button',{class:'nav navTools'+(LS.get('toolsOpen',false)?' open':''),html:ic('blocks')+'<span class="lbl">ツール</span>'+ic('chevron-right','chev lbl')}); const tl=h('div',{class:'toolNav'}); if(!LS.get('toolsOpen',false)) tl.style.display='none';
-  tg.onclick=()=>{ const o=!LS.get('toolsOpen',false); LS.set('toolsOpen',o); tg.classList.toggle('open',o); tl.style.display=o?'':'none'; }; TOOLNAV.forEach(([id,t,i])=>{ const b=h('button',{class:'nav sub','data-nav':id,html:ic(i)+`<span class="lbl">${t}</span>`}); b.onclick=()=>{ closeDrawer(); go('#/'+id); }; tl.append(b); }); side.append(tg,tl);
+  tg.onclick=()=>{ const o=!LS.get('toolsOpen',false); LS.set('toolsOpen',o); tg.classList.toggle('open',o); tl.style.display=o?'':'none'; }; TOOLNAV.forEach(([id,t,i])=>{ const b=h('button',{class:'nav sub','data-nav':id,html:ic(i)+`<span class="lbl">${t}</span>`}); b.onclick=()=>{ closeDrawer(); go('#/'+id); }; tl.append(b); }); const cu=side.querySelector('[data-nav="custom"]'); side.insertBefore(tg,cu); side.insertBefore(tl,cu);
   side.append(h('div',{class:'sideLab',id:'recentLab'},'最近のチャット')); const rec=h('div',{class:'recent',id:'recent'}); side.append(rec);
   const me=h('div',{class:'me',id:'me'}); side.append(me);
   const main=h('main',{class:'main'}); const top=h('header',{class:'top',id:'top'}); main.append(top,h('div',{class:'view',id:'view'}));
