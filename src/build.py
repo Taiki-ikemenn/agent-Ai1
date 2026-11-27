@@ -1,6 +1,6 @@
 import re,os,json
 D='/home/claude/lucide/package/icons'
-FILES=['a1_core.js','a2_data.js','a3_ai.js','a4_media.js','a5_conn.js','a6_tools.js','a7_files.js','a8_qr.js','b1_shell.js','b1b_sidebar.js','b2_chat.js','b2b_ask_plan.js','b2c_voice_log.js','b3_projects.js','b4_code.js','b5_library.js','b6_schedule.js','b7_feed.js','b8_custom.js','b10_make.js','b9_boot.js']
+FILES=['a1_core.js','a2_data.js','a3_ai.js','a4_media.js','a5_conn.js','a6_tools.js','a7_files.js','a8_qr.js','b1_shell.js','b1b_sidebar.js','b2_chat.js','b2b_ask_plan.js','b2c_voice_log.js','b3_projects.js','b4_code.js','b5_library.js','b6_schedule.js','b7_feed.js','b8_custom.js','b10_make.js','b11_life.js','b9_boot.js']
 js='\n'.join(open(f).read() for f in FILES)
 names=set(re.findall(r"""['"]([a-z][a-z0-9-]*)['"]""",js))|{'circle'}
 icons={}

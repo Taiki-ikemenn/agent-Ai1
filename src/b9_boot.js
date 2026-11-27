@@ -7,6 +7,6 @@
     if(!booted){ booted=true; startScheduler(); spotifyCallback().catch(()=>{}); setTimeout(()=>{ try{ feedAuto(); }catch(e){} },9000); } };
   BUS.on('auth',onUser); onUser(FB.user);
   BUS.on('chats',paintRecent); BUS.on('projects',()=>{ paintRecent(); paintMe(); }); BUS.on('project',()=>{ paintRecent(); paintMe(); }); BUS.on('sync',paintMe); BUS.on('settings',()=>{ applyTheme(); paintMe(); });
-  addEventListener('resize',applyTheme);
+  addEventListener('resize',applyTheme); BUS.on('settings',applyColors); applyColors();
   if('serviceWorker' in navigator&&location.protocol==='https:'){ navigator.serviceWorker.register('sw.js').catch(()=>{}); navigator.serviceWorker.addEventListener('message',e=>{ if(e.data&&e.data.go) location.hash=e.data.go; }); }
 })();

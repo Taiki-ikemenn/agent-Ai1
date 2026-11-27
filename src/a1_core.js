@@ -1,5 +1,5 @@
 /* ===== エージェントAi : 基本の道具 ===== */
-const VERSION='2.6.0';
+const VERSION='3.0.0';
 const $=s=>document.querySelector(s);
 function h(tag,attrs,...kids){ const e=document.createElement(tag); if(attrs) for(const k in attrs){ const v=attrs[k]; if(v==null||v===false) continue; if(k==='class') e.className=v; else if(k==='html') e.innerHTML=v; else if(k==='style'&&typeof v==='object') Object.assign(e.style,v); else if(k.startsWith('on')&&typeof v==='function') e[k]=v; else e.setAttribute(k,v===true?'':v); } for(const c of kids.flat()){ if(c==null||c===false) continue; e.append(c.nodeType?c:document.createTextNode(String(c))); } return e; }
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -17,7 +17,7 @@ function fmtDT(ms){ const d=new Date(ms); return `${d.getMonth()+1}月${d.getDat
 function toast(msg,icon='info',ms=2600){ const t=h('div',{class:'toast',html:ic(icon)+'<span>'+esc(msg)+'</span>'}); $('#toasts').append(t); setTimeout(()=>{ t.classList.add('out'); setTimeout(()=>t.remove(),300); },ms); }
 
 /* ---------- モーダル ---------- */
-function modal(build,{wide=false,onClose}={}){ const sc=h('div',{class:'scrim'}); const m=h('div',{class:'modal'+(wide?' wide':'')}); sc.append(m); const close=()=>{ sc.style.animation='fade .2s reverse forwards'; setTimeout(()=>sc.remove(),180); onClose&&onClose(); }; sc.onclick=e=>{ if(e.target===sc) close(); }; build(m,close); document.body.append(sc); return close; }
+function modal(build,{wide=false,onClose}={}){ const sc=h('div',{class:'scrim'}); const m=h('div',{class:'modal'+(wide?' wide':'')}); sc.append(m); const close=()=>{ sc.style.animation='fade .2s reverse forwards'; setTimeout(()=>sc.remove(),180); onClose&&onClose(); }; sc.onclick=e=>{ if(e.target===sc) close(); }; sc._close=close; build(m,close); document.body.append(sc); return close; }
 function confirmBox(title,text,okLabel='OK',danger=false){ return new Promise(res=>{ modal((m,close)=>{ m.append(h('h3',null,title),h('p',{class:'muted',style:'line-height:1.7;white-space:pre-wrap;max-height:50vh;overflow:auto;background:var(--panel2);border-radius:12px;padding:12px 14px'},text)); const f=h('div',{class:'modalFoot'}); f.append(h('button',{class:'btn ghost',onclick:()=>{ close(); res(false); }},'やめる'),h('button',{class:'btn '+(danger?'danger':'pri'),onclick:()=>{ close(); res(true); }},okLabel)); m.append(f); }); }); }
 
 /* ---------- プルダウン ---------- */

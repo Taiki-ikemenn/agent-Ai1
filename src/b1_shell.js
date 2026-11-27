@@ -1,13 +1,15 @@
 /* ===== 画面のわく：サイドバー・ページ切り替え・ログイン ===== */
 const LOGO=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><defs><linearGradient id="lg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4f6bff"/><stop offset=".55" stop-color="#7a5cff"/><stop offset="1" stop-color="#2bd9a0"/></linearGradient></defs><rect width="64" height="64" rx="16" fill="url(#lg)"/><path d="M19 47 31 17h2l12 30" fill="none" stroke="#fff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/><path d="M24.5 37h15" stroke="#fff" stroke-width="5" stroke-linecap="round"/><path d="M48 9l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" fill="#fff"/></svg>`;
 const LOGO_URL='data:image/svg+xml;utf8,'+encodeURIComponent(LOGO);
-const NAV=[['chat','新しいチャット','square-pen'],['projects','プロジェクト','folder-kanban'],['code','コード','code-xml'],['library','ライブラリ','images'],['schedule','スケジュール','calendar-clock'],['feed','フィード','newspaper'],['custom','カスタマイズ','sliders-horizontal']];
+const NAV=[['chat','新しいチャット','square-pen'],['home','ホーム','house'],['projects','プロジェクト','folder-kanban'],['code','コード','code-xml'],['library','ライブラリ','images'],['schedule','スケジュール','calendar-clock'],['feed','フィード','newspaper'],['custom','カスタマイズ','sliders-horizontal']];
 const PAGES={}; let CUR={page:'',arg:'',cleanup:null};
 const PCOLORS=['#4f6bff','#7a5cff','#2bd9a0','#f59e0b','#ef4444','#ec4899','#0ea5e9','#14b8a6','#64748b'];
 
 function renderShell(){ const app=$('#app'); app.innerHTML='';
   const side=h('aside',{class:'side'}); const brand=h('div',{class:'brand',html:`<img src="${LOGO_URL}" alt=""><span>エージェントAi</span>`}); const col=h('button',{class:'collapse',title:'サイドバーを細くする',html:ic('panel-left')}); col.onclick=()=>DB.setSettings({sideMini:!S.settings.sideMini}); brand.append(col); side.append(brand);
   NAV.forEach(([id,t,i])=>{ const b=h('button',{class:'nav'+(id==='chat'?' new':''),'data-nav':id,html:ic(i)+`<span class="lbl">${t}</span>`+(id==='chat'?'<span class="kbd lbl">⌘K</span>':'')}); b.onclick=()=>{ closeDrawer(); go(id==='chat'?'#/new':'#/'+id); }; side.append(b); });
+  const TOOLNAV=[['todo','ToDo','list-todo'],['calendar','カレンダー','calendar-days'],['money','家計簿','wallet'],['apps','マイアプリ','layout-grid'],['log','作業ログ','scroll-text']]; const tg=h('button',{class:'nav navTools'+(LS.get('toolsOpen',false)?' open':''),html:ic('blocks')+'<span class="lbl">ツール</span>'+ic('chevron-right','chev lbl')}); const tl=h('div',{class:'toolNav'}); if(!LS.get('toolsOpen',false)) tl.style.display='none';
+  tg.onclick=()=>{ const o=!LS.get('toolsOpen',false); LS.set('toolsOpen',o); tg.classList.toggle('open',o); tl.style.display=o?'':'none'; }; TOOLNAV.forEach(([id,t,i])=>{ const b=h('button',{class:'nav sub','data-nav':id,html:ic(i)+`<span class="lbl">${t}</span>`}); b.onclick=()=>{ closeDrawer(); go('#/'+id); }; tl.append(b); }); side.append(tg,tl);
   side.append(h('div',{class:'sideLab',id:'recentLab'},'最近のチャット')); const rec=h('div',{class:'recent',id:'recent'}); side.append(rec);
   const me=h('div',{class:'me',id:'me'}); side.append(me);
   const main=h('main',{class:'main'}); const top=h('header',{class:'top',id:'top'}); main.append(top,h('div',{class:'view',id:'view'}));
@@ -25,7 +27,7 @@ var paintRecent=function(){ const r=$('#recent'); if(!r) return; const p=S.curPr
     b.onclick=()=>{ closeDrawer(); go('#/chat/'+c.id); }; const x=h('span',{class:'rcx',html:ic('trash-2'),title:'削除'}); x.onclick=async e=>{ e.stopPropagation(); if(await confirmBox('チャットを削除','「'+(c.title||'')+'」を削除します。元に戻せません。','削除',true)){ await delChat(c.id); if(CUR.arg===c.id) go('#/new'); toast('削除しました','trash-2'); } }; b.append(x); r.append(b); }); };
 function paintNav(){ document.querySelectorAll('[data-nav]').forEach(b=>b.classList.toggle('on',b.dataset.nav===CUR.page&&!(CUR.page==='chat'))); }
 function go(hash){ if(location.hash===hash) route(); else location.hash=hash; }
-function route(){ const [,page='new',arg='']=(location.hash||'#/new').split('/'); const p=page==='new'?'chat':page; if(CUR.cleanup){ try{ CUR.cleanup(); }catch(e){} CUR.cleanup=null; }
+function route(){ const [,page='new',arg='']=(location.hash||(S.settings.startPage==='home'?'#/home':'#/new')).split('/'); const p=page==='new'?'chat':page; if(CUR.cleanup){ try{ CUR.cleanup(); }catch(e){} CUR.cleanup=null; }
   CUR={page:p,arg:page==='new'?'':decodeURIComponent(arg),cleanup:null}; const v=$('#view'); v.innerHTML=''; const pg=h('div',{class:'page'}); v.append(pg); (PAGES[p]||PAGES.chat)(pg,CUR.arg); paintNav(); paintRecent(); }
 addEventListener('hashchange',()=>S.user&&route());
 addEventListener('keydown',e=>{ if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){ e.preventDefault(); go('#/new'); } });
