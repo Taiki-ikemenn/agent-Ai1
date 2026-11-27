@@ -60,11 +60,11 @@ async function toContents(msgs){ const out=[]; for(const m of msgs){ if(m.role==
 async function attPart(a){ try{ if(a.text!=null) return {text:`【ファイル：${a.name}】\n${a.text.slice(0,200000)}`}; let data=a.data; if(!data){ const b=await IDB.get('att_'+a.id); if(b) data=await blobToB64(b); } if(!data){ try{ const d=await FB.m.getDoc(DB.doc('atts',a.id)); if(d.exists()) data=d.data().data; }catch(e){} } if(!data) return {text:`【ファイル：${a.name}（この端末にないため読めません）】`}; return {inlineData:{mimeType:a.mime,data:data.replace(/^data:[^,]+,/,'')}}; }catch(e){ return null; } }
 
 /* ---------- エージェントの動き（考える→道具→たしかめる→答える） ---------- */
-async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter}){ const model=S.settings.model||'fast';
-  const decls=toolDecls(toolFilter); const contents=await toContents(msgs); const sys=sysPrompt(extraSys); const res={text:'',files:[],media:[],sources:[],steps:[],cards:[],actions:[]};
+async function runAgent({msgs,onStep,signal,extraSys='',ctx={},maxRounds=12,toolFilter,force=[]}){ const model=S.settings.model||'fast';
+  const decls=toolDecls(toolFilter); force=force.filter(n=>decls.some(d=>d.name===n)); if(force.length) extraSys+=`\nユーザーは @ で道具を指定しました。必ず次の道具を使って答えること：${force.join('、')}`; const contents=await toContents(msgs); const sys=sysPrompt(extraSys); const res={text:'',files:[],media:[],sources:[],steps:[],cards:[],actions:[]};
   ctx={...ctx,res,signal};
   for(let round=0;round<maxRounds;round++){ let j;
-    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7}},signal); }
+    try{ j=await gemini(model,{contents,systemInstruction:{parts:[{text:sys}]},tools:decls.length?[{functionDeclarations:decls}]:undefined,generationConfig:{temperature:.7},toolConfig:round===0&&force.length?{functionCallingConfig:{mode:'ANY',allowedFunctionNames:force}}:undefined},signal); }
     catch(e){ throw e; }
     const cand=j.candidates&&j.candidates[0]; const parts=(cand&&cand.content&&cand.content.parts)||[]; const calls=parts.filter(p=>p.functionCall);
     const txt=parts.filter(p=>p.text&&!p.thought).map(p=>p.text).join('');

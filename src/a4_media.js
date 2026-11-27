@@ -22,12 +22,21 @@ async function loadBitmap(src){ try{ const r=await fetchT(src,40000); if(!r.ok) 
 /* ---------- 音楽：AIが作曲 → ブラウザで演奏して WAV に ---------- */
 const NOTE={C:0,'C#':1,Db:1,D:2,'D#':3,Eb:3,E:4,F:5,'F#':6,Gb:6,G:7,'G#':8,Ab:8,A:9,'A#':10,Bb:10,B:11};
 function chordNotes(name){ const m=String(name).match(/^([A-G][#b]?)(maj7|m7|7|m|dim|sus4|sus2|add9)?/); if(!m) return [60,64,67]; const r=NOTE[m[1]]; const q=m[2]||''; const iv={'':[0,4,7],m:[0,3,7],'7':[0,4,7,10],maj7:[0,4,7,11],m7:[0,3,7,10],dim:[0,3,6],sus4:[0,5,7],sus2:[0,2,7],add9:[0,4,7,14]}[q]||[0,4,7]; return iv.map(i=>48+r+i); }
-async function composeMusic(desc,{seconds=40,mood='',tempo=0}={}){ const j=await geminiText(`次の希望に合う短い曲を作曲して、JSONだけ返して。希望：「${desc}」${mood?' 雰囲気：'+mood:''}
-形式：{"title":"曲名(日本語)","bpm":${tempo||'60〜170の数'},"style":"pop|lofi|edm|rock|ambient|jazz|chiptune|cinematic|ballad のどれか","chords":["1小節ごとのコード(例 C, Am, F, G7, Em7)を8個"],"melody":[[拍(0〜31の数・小数可),長さ(拍),MIDI音番号(60〜84)],...20〜40個],"drums":true/false,"lead":"piano|bell|synth|square|pluck|strings のどれか"}`,{json:true});
-  if(!j||!j.chords) throw new Error('作曲に失敗しました');
+function localCompose(desc,{seconds=40,mood='',tempo=0}={}){ const t=(desc+' '+mood).toLowerCase(); let seed=0; for(const ch of t) seed=(seed*31+ch.charCodeAt(0))>>>0; seed^=Date.now()&0xffff; const rnd=()=>{ seed=(seed*1664525+1013904223)>>>0; return seed/4294967296; };
+  const S2=[[/lo-?fi|ゆったり|作業|勉強|チル|chill|カフェ/,'lofi',82,'piano'],[/edm|ダンス|クラブ|激し|ノリ|テンション/,'edm',128,'synth'],[/ロック|rock|かっこい/,'rock',140,'square'],[/眠|癒|リラックス|瞑想|アンビエント|ambient|しずか|静か/,'ambient',68,'bell'],[/ジャズ|jazz|おしゃれ/,'jazz',100,'piano'],[/ゲーム|8bit|８ビット|レトロ|ピコピコ|チップ/,'chiptune',150,'square'],[/映画|壮大|冒険|シネマ|cinematic|ファンタジー/,'cinematic',92,'strings'],[/バラード|悲|切な|せつな|感動/,'ballad',72,'piano']];
+  const hit=S2.find(([re])=>re.test(t))||[0,'pop',112,'pluck']; const style=hit[1];
+  const PR={pop:[['C','G','Am','F'],['F','G','Em','Am']],lofi:[['Dm7','G7','Cmaj7','Am7'],['Fmaj7','Em7','Dm7','Cmaj7']],edm:[['Am','F','C','G'],['Am','F','C','G']],rock:[['E','D','A','E'],['C','D','E','E']],ambient:[['Cmaj7','Fmaj7','Am7','Fmaj7'],['Cmaj7','Em7','Fmaj7','G']],jazz:[['Dm7','G7','Cmaj7','A7'],['Dm7','G7','Em7','A7']],chiptune:[['C','Am','F','G'],['C','Am','F','G']],cinematic:[['Am','F','C','G'],['Dm','Am','E','Am']],ballad:[['C','G','Am','Em'],['F','C','Dm','G']]}[style];
+  const chords=[...PR[0],...PR[1]]; const scale=[60,62,64,67,69,72,74,76,79,81]; const melody=[]; let pos=4; let b=0;
+  while(b<32){ const d=[.5,1,1,1.5,2][Math.floor(rnd()*5)]; if(rnd()<.18){ b+=d; continue; } pos=clamp(pos+Math.round((rnd()-.5)*4),0,scale.length-1); melody.push({b,d:Math.min(d,32-b),n:scale[pos]}); b+=d; }
+  return {title:(desc.replace(/[をのでにがはと、。]|作って|ください|曲|BGM|秒|\d+/g,' ').trim().split(/\s+/)[0]||'AI')+'のテーマ',bpm:tempo||hit[2],style,chords,melody,drums:style!=='ambient',lead:hit[3],seconds:clamp(seconds,10,120),desc,local:true}; }
+async function composeMusic(desc,{seconds=40,mood='',tempo=0}={}){ let j=null;
+  try{ j=await geminiText(`次の希望に合う短い曲を作曲して、JSONだけ返して。希望：「${desc}」${mood?' 雰囲気：'+mood:''}
+形式：{"title":"曲名(日本語)","bpm":${tempo||'60〜170の数'},"style":"pop|lofi|edm|rock|ambient|jazz|chiptune|cinematic|ballad のどれか","chords":["1小節ごとのコード(例 C, Am, F, G7, Em7)を8個"],"melody":[{"b":拍(0〜31),"d":長さ(拍),"n":MIDI音番号(60〜84)},...20〜40個],"drums":true/false,"lead":"piano|bell|synth|square|pluck|strings のどれか"}`,{json:true,model:'lite'}); }catch(e){ console.warn('作曲はその場で行います',e); }
+  if(!j||!j.chords) return localCompose(desc,{seconds,mood,tempo});
   j.chords=(Array.isArray(j.chords)?j.chords:String(j.chords).split(/[\s,]+/)).map(String).filter(Boolean).slice(0,16); if(!j.chords.length) j.chords=['C','Am','F','G'];
   j.melody=(Array.isArray(j.melody)?j.melody:[]).map(x=>Array.isArray(x)?{b:+x[0],d:+x[1],n:+x[2]}:{b:+x.b,d:+x.d,n:+x.n}).filter(x=>isFinite(x.b)&&isFinite(x.d)&&isFinite(x.n));
-  j.drums=j.drums!==false; j.title=String(j.title||'AIの曲'); j.bpm=clamp(+j.bpm||110,50,180); j.seconds=clamp(seconds,10,120); j.desc=desc; return j; }
+  if(!j.melody.length) j.melody=localCompose(desc).melody; j.drums=j.drums!==false; j.title=String(j.title||'AIの曲');
+  j.bpm=clamp(+j.bpm||110,50,180); j.seconds=clamp(seconds,10,120); j.desc=desc; return j; }
 async function renderMusic(sc){ const sr=44100, bpm=sc.bpm, beat=60/bpm, bars=sc.chords.length, loopBeats=bars*4, total=Math.max(beat*4,sc.seconds); const ctx=new OfflineAudioContext(2,Math.ceil(sr*(total+1.5)),sr);
   const master=ctx.createGain(); master.gain.value=.55; const comp=ctx.createDynamicsCompressor(); master.connect(comp); comp.connect(ctx.destination);
   const rev=ctx.createConvolver(); const L=sr*2, ir=ctx.createBuffer(2,L,sr); for(let c=0;c<2;c++){ const d=ir.getChannelData(c); for(let i=0;i<L;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/L,3); } rev.buffer=ir; const rg=ctx.createGain(); rg.gain.value=sc.style==='ambient'||sc.style==='cinematic'?.5:.22; rev.connect(rg); rg.connect(master);
@@ -62,7 +71,7 @@ async function musicBlob(id,score){ if(MUSICCACHE[id]) return MUSICCACHE[id]; co
 
 /* ---------- 動画：AIの画像＋文字＋音楽をブラウザで組み立てる ---------- */
 async function planVideo(topic,{scenes=5,vertical=false,style=''}={}){ const j=await geminiText(`「${topic}」の短い動画の台本をJSONだけで返して。${style?'雰囲気：'+style:''}
-形式：{"title":"動画のタイトル","music":"BGMのイメージ(日本語)","scenes":[{"caption":"画面に出す短い日本語(20文字まで)","sub":"小さい補足(30文字まで・なくてもよい)","image":"その場面の画像を作るための英語のプロンプト(cinematic, detailed)","sec":3〜5の数}]} 場面は${scenes}個。`,{json:true});
+形式：{"title":"動画のタイトル","music":"BGMのイメージ(日本語)","scenes":[{"caption":"画面に出す短い日本語(20文字まで)","sub":"小さい補足(30文字まで・なくてもよい)","image":"その場面の画像を作るための英語のプロンプト(cinematic, detailed)","sec":3〜5の数}]} 場面は${scenes}個。`,{json:true,model:"lite"});
   if(!j||!j.scenes) throw new Error('台本を作れませんでした'); j.vertical=vertical; j.scenes=j.scenes.slice(0,10).map(s=>({...s,sec:clamp(+s.sec||4,2,8),seed:Math.floor(Math.random()*1e9)})); return j; }
 function sceneURL(s,vertical){ const [w,hh]=vertical?[720,1280]:[1280,720]; return `https://image.pollinations.ai/prompt/${encodeURIComponent(s.image)}?width=${w}&height=${hh}&seed=${s.seed}&nologo=true&model=flux`; }
 async function renderVideo(plan,{onProgress,withMusic=true,actx:givenCtx}={}){ const [W,H]=plan.vertical?[720,1280]:[1280,720]; const c=h('canvas',{width:W,height:H}); const x=c.getContext('2d');

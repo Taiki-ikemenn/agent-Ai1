@@ -1,15 +1,48 @@
 /* ===== チャット画面（新しいチャット・履歴の続き・コード画面の左側でも使う） ===== */
 const TEXT_EXT=/\.(txt|md|markdown|csv|tsv|json|js|mjs|ts|tsx|jsx|py|rb|php|java|kt|swift|c|h|cpp|hpp|cs|go|rs|html?|css|scss|xml|svg|yml|yaml|toml|ini|sh|bat|ps1|sql|log|ics|vtt|srt|tex|r|lua|dart|vue)$/i;
-async function prepAtt(file){ const id=uid(); const a={id,name:file.name||'ファイル',mime:file.type||guessMime(file.name||''),size:file.size};
-  if(/^text\//.test(a.mime)||TEXT_EXT.test(a.name)||/json|xml|javascript/.test(a.mime)){ let t=await file.text(); if(t.length>200000) t=t.slice(0,200000)+'\n…（長いので途中まで）'; a.text=t; return a; }
-  if(a.size>15*1048576) throw new Error(a.name+' は大きすぎます（15MBまで）');
-  let blob=file; if(/^image\//.test(a.mime)&&!/gif|svg/.test(a.mime)){ blob=await shrinkImage(file,1600,.85); a.mime='image/jpeg'; a.size=blob.size; } if(/^image\//.test(a.mime)) a.thumb=await makeThumb(blob,120);
-  if(!/^(image|audio|video)\/|pdf$/.test(a.mime)) a.note='この形式はAIが直接読めないかもしれません';
+async function prepAtt(file){ const id=uid(); const name=file.name||'ファイル', ext=(name.split('.').pop()||'').toLowerCase(); const a={id,name,mime:file.type||guessMime(name),size:file.size};
+  const asText=t=>{ if(t.length>200000) t=t.slice(0,200000)+'\n…（長いので途中まで）'; a.text=t; return a; };
+  if(/^(docx|xlsx|pptx|odt|ods|odp|epub|zip)$/.test(ext)){ if(!('DecompressionStream' in window)) throw new Error('この端末では '+ext+' を開けません（iOS 16.4以降が必要です）'); try{ return asText(await officeText(file)); }catch(e){ throw new Error(name+' を読めませんでした：'+e.message); } }
+  if(ext==='rtf') return asText(rtfText(await file.text()));
+  if(/^(doc|xls|ppt)$/.test(ext)) throw new Error('古い形式（.'+ext+'）は読めません。新しい形式（.'+ext+'x）かPDFで保存し直してください');
+  if(/^text\//.test(a.mime)||TEXT_EXT.test(name)||/json|xml|javascript/.test(a.mime)) return asText(await file.text());
+  if(a.size>40*1048576) throw new Error(name+' は大きすぎます（40MBまで）');
+  let blob=file;
+  if(/^image\//.test(a.mime)||/^(heic|heif|bmp|tiff?|gif|avif)$/.test(ext)){ blob=await shrinkImage(file,1600,.85); if(blob===file&&!/^image\/(png|jpeg|webp|heic|heif)$/.test(a.mime)) throw new Error(name+' はこの端末で開けない画像です'); a.mime=blob.type||'image/jpeg'; a.size=blob.size; a.thumb=await makeThumb(blob,120); }
+  else if(/^audio\//.test(a.mime)||/^(mp3|wav|m4a|aac|ogg|oga|flac|aiff?|opus|caf|amr)$/.test(ext)){ const native=/^(mp3|wav|aac|ogg|flac|aiff?)$/.test(ext); if(!native||a.size>12*1048576){ try{ blob=await audioToWav(file); a.mime='audio/wav'; a.size=blob.size; }catch(e){ if(!native) throw new Error(name+' をこの端末で読めませんでした'); } } else a.mime=({mp3:'audio/mp3',wav:'audio/wav',aac:'audio/aac',ogg:'audio/ogg',flac:'audio/flac',aif:'audio/aiff',aiff:'audio/aiff'})[ext]||a.mime; }
+  else if(/^video\//.test(a.mime)||/^(mp4|m4v|mov|webm|mpe?g|avi|wmv|3gp|flv)$/.test(ext)){ a.mime=({mov:'video/mov',m4v:'video/mp4',mpg:'video/mpeg',avi:'video/avi',wmv:'video/wmv','3gp':'video/3gpp',flv:'video/x-flv'})[ext]||(a.mime&&a.mime.startsWith('video/')?a.mime:'video/mp4'); }
+  else if(ext==='pdf'||a.mime==='application/pdf'){ a.mime='application/pdf'; }
+  else { const u8=new Uint8Array(await file.slice(0,4096).arrayBuffer()); if(looksText(u8)) return asText(await file.text()); throw new Error(name+' はAIが読めない形式です（「AIが読めるファイルの種類」を見てね）'); }
+  if(blob.size>15*1048576) throw new Error(name+' は大きすぎます（15MBまで）');
   a.data=await blobToB64(blob); try{ await IDB.set('att_'+id,blob); }catch(e){}
   if(a.data.length<900000){ try{ await DB.put('atts',id,{data:a.data,mime:a.mime},false); }catch(e){} } return a; }
 const stableHash=o=>JSON.stringify(o,(k,v)=>v&&typeof v==='object'&&!Array.isArray(v)?Object.keys(v).sort().reduce((r,x)=>(x==='data'?r:(r[x]=v[x],r)),{}):v);
 const stripAtt=a=>{ const o={...a}; delete o.data; return o; };
 
+const MENTIONS=[
+  {id:'gmail',name:'Gmail',conn:'gmail',tools:['gmail_search','gmail_read','gmail_send'],keys:'gmail めーる メール mail'},
+  {id:'github',name:'GitHub',conn:'github',tools:['github_repos','github_list','github_read','github_write','github_issue'],keys:'github ぎっと'},
+  {id:'weather',name:'天気',conn:'weather',tools:['get_weather'],keys:'tenki てんき weather'},
+  {id:'youtube',name:'YouTube',conn:'youtube',tools:['youtube_search'],keys:'youtube ゆーちゅーぶ どうが'},
+  {id:'browser',name:'Web検索',conn:'browser',tools:['web_search','read_webpage','open_link'],keys:'web けんさく ぶらうざ browser search google'},
+  {id:'canva',name:'Canva',conn:'canva',tools:['canva_design'],keys:'canva きゃんば'},
+  {id:'spotify',name:'Spotify',conn:'spotify',tools:['spotify_search','spotify_control','spotify_playlist'],keys:'spotify すぽてぃふぁい おんがく'},
+  {id:'contacts',name:'連絡先',conn:'contacts',tools:['contacts_search','contacts_create'],keys:'contacts れんらくさき'},
+  {id:'forms',name:'フォーム',conn:'forms',tools:['forms_create','forms_responses'],keys:'forms ふぉーむ あんけーと'},
+  {id:'adobe',name:'Adobe',conn:'adobe',tools:['adobe_design'],keys:'adobe あどび express firefly'},
+  'sep',
+  {id:'image',name:'画像',icon:'image',color:'#ec4899',tools:['create_image'],keys:'image がぞう え'},
+  {id:'music',name:'音楽',icon:'music',color:'#14b8a6',tools:['create_music'],keys:'music おんがく きょく bgm'},
+  {id:'video',name:'動画',icon:'clapperboard',color:'#f59e0b',tools:['create_video'],keys:'video どうが'},
+  {id:'file',name:'ファイル',icon:'file-plus',color:'#4f6bff',tools:['create_file'],keys:'file ふぁいる'},
+  {id:'memory',name:'メモリー',icon:'brain',color:'#7a5cff',tools:['memory_save','memory_search'],keys:'memory めもりー おぼえる'},
+  {id:'chats',name:'過去のチャット',icon:'messages-square',color:'#64748b',tools:['search_chats'],keys:'chat ちゃっと かこ'},
+  {id:'library',name:'ライブラリ',icon:'library',color:'#0ea5e9',tools:['search_library'],keys:'library らいぶらり'},
+  {id:'schedule',name:'スケジュール',icon:'calendar-clock',color:'#0ea5e9',tools:['schedule_create'],keys:'schedule すけじゅーる よてい'},
+  {id:'calc',name:'計算',icon:'calculator',color:'#22c55e',tools:['run_javascript'],keys:'calc けいさん javascript'}];
+function mentionInfo(m){ const c=m.conn&&CONNS.find(x=>x.id===m.conn); return {icon:m.icon||(c&&c.icon)||'at-sign',color:m.color||(c&&c.color)||'#4f6bff',desc:c?c.desc:(TOOLS[m.tools[0]]?TOOLS[m.tools[0]].decl.description.slice(0,40):''),ok:!c||connOk(c)}; }
+const mentionsIn=t=>MENTIONS.filter(m=>m!=='sep'&&new RegExp('@'+m.name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'(?=$|[\\s、。,.!?！？])').test(t||''));
+function mentionHTML(t){ let s=esc(t); MENTIONS.forEach(m=>{ if(m==='sep') return; s=s.split('@'+esc(m.name)).join('<span class="mtag">@'+esc(m.name)+'</span>'); }); return s; }
 function speak(text){ if(!('speechSynthesis' in window)) return toast('この端末は読み上げに対応していません','x'); speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(text.replace(/```[\s\S]*?```/g,'（コード）').replace(/[#*`>|]/g,'').slice(0,4000)); u.lang='ja-JP'; u.rate=1.05; speechSynthesis.speak(u); }
 
 const SUGG=[['cloud-sun','#2aa4f4','今日の天気と服装','今日の天気を調べて、服装と持ち物をアドバイスして'],['newspaper','#7a5cff','今日のニュース','今日の日本と世界の大事なニュースを5つ、やさしくまとめて'],['image','#ec4899','画像を作る','夕焼けの海辺にある小さな未来都市の画像を作って'],['music','#14b8a6','BGMを作る','作業用のゆったりしたlo-fiのBGMを40秒で作って'],['code-xml','#4f6bff','ミニアプリを作る','ブラウザで遊べるシンプルなタイピングゲームをHTML1枚で作って、ファイルにして'],['clapperboard','#f59e0b','短い動画を作る','宇宙の不思議を紹介する20秒くらいの縦長動画を作って'],['mail','#ea4335','メールを整理','未読メールを確認して、大事なものだけ要約して'],['calendar-clock','#0ea5e9','毎朝のまとめ','毎朝7時に、天気とニュースをまとめて通知するスケジュールを作って']];
@@ -19,19 +52,33 @@ function chatView(root,{chatId='',kind='chat',toolFilter,extraSys='',compact=fal
   const wrap=h('div',{class:'chatPage'}); const list=h('div',{class:'msgs'}); const inner=h('div',{class:'inner'}); list.append(inner);
   const comp=h('div',{class:'composer'}); wrap.append(list,comp); root.append(wrap);
   /* ---- 入力欄 ---- */
-  const box=h('div',{class:'cbox'}), cAtts=h('div',{class:'cAtts'}); cAtts.style.display='none'; const ta=h('textarea',{rows:1,placeholder:placeholder||'エージェントAiに頼む…（ファイルはドラッグでも追加できます）'});
+  const box=h('div',{class:'cbox'}), cAtts=h('div',{class:'cAtts'}); cAtts.style.display='none'; const ta=h('textarea',{rows:1,placeholder:placeholder||'エージェントAiに頼む…（@ でアプリを指定・ファイルも読めます）'});
   const fileIn=h('input',{type:'file',multiple:true,style:'display:none'}); const bar=h('div',{class:'cBar'});
   const attB=h('button',{class:'btn icon ghost',title:'ファイルを追加',html:ic('paperclip')}); attB.onclick=()=>fileIn.click();
-  const modes=dropdown({value:'',icon:'sparkles',label:()=>'',items:[{v:'img',t:'画像を作る',icon:'image'},{v:'music',t:'音楽を作る',icon:'music'},{v:'video',t:'動画を作る',icon:'clapperboard'},{v:'web',t:'Webでくわしく調べる',icon:'search'},{v:'file',t:'ファイルにまとめる',icon:'file-plus'},'sep',{v:'mem',t:'これを覚えて',icon:'brain'}],onChange:v=>{ const pre={img:'次の画像を作って：',music:'次の曲を作って：',video:'次の動画を作って：',web:'Webでくわしく調べて、出典つきでまとめて：',file:'次の内容をファイルにまとめて：',mem:'これを覚えておいて：'}[v]; ta.value=pre+ta.value; ta.focus(); autoGrow(); modes.set(''); }});
+  const modes=dropdown({value:'',icon:'sparkles',label:()=>'',items:[{v:'img',t:'画像を作る',icon:'image'},{v:'music',t:'音楽を作る',icon:'music'},{v:'video',t:'動画を作る',icon:'clapperboard'},{v:'web',t:'Webでくわしく調べる',icon:'search'},{v:'file',t:'ファイルにまとめる',icon:'file-plus'},'sep',{v:'mem',t:'これを覚えて',icon:'brain'},{v:'types',t:'AIが読めるファイルの種類',icon:'file-question'}],onChange:v=>{ if(v==='types'){ modes.set(''); showFileKinds(); return; } const pre={img:'次の画像を作って：',music:'次の曲を作って：',video:'次の動画を作って：',web:'Webでくわしく調べて、出典つきでまとめて：',file:'次の内容をファイルにまとめて：',mem:'これを覚えておいて：'}[v]; ta.value=pre+ta.value; ta.focus(); autoGrow(); modes.set(''); }});
   modes.querySelector('.ddBtn').classList.add('ghost'); modes.querySelector('.ddBtn').title='作る・調べる';
   const model=dropdown({value:roleOf(S.settings.model),items:MODELS,label:c=>c?c.t:'標準',onChange:v=>DB.setSettings({model:v})});
   const mic=h('button',{class:'btn icon ghost',title:'声で入力',html:ic('mic')}); const SR=window.SpeechRecognition||window.webkitSpeechRecognition; if(!SR) mic.style.display='none';
   mic.onclick=()=>{ const r=new SR(); r.lang='ja-JP'; r.interimResults=true; const base=ta.value; mic.classList.add('pri'); r.onresult=e=>{ ta.value=base+Array.from(e.results).map(x=>x[0].transcript).join(''); autoGrow(); }; r.onend=()=>mic.classList.remove('pri'); r.start(); };
   const send=h('button',{class:'send',title:'送る',html:ic('arrow-up')}); send.onclick=()=>busy?stop():submit();
   bar.append(attB,modes,model,h('div',{class:'sp'}),mic,send); box.append(cAtts,ta,bar,fileIn); comp.append(box); if(!compact) comp.append(h('div',{class:'hint'},'エージェントAiはまちがえることがあります。大事なことはたしかめてね。'));
+  const pills=h('div',{class:'mPills'}); pills.style.display='none'; box.insertBefore(pills,ta);
+  let mBox=null, mSel=0, mList=[];
+  const closeM=()=>{ mBox&&mBox.remove(); mBox=null; };
+  const mQuery=()=>{ const pre=ta.value.slice(0,ta.selectionStart); const m=pre.match(/(^|[\s　])@([^\s@　]*)$/); return m?{q:m[2],start:pre.length-m[2].length-1}:null; };
+  const pickM=it=>{ const q=mQuery(); if(!q) return; const after=ta.value.slice(ta.selectionStart); ta.value=ta.value.slice(0,q.start)+'@'+it.name+' '+after.replace(/^\s/,''); const p=q.start+it.name.length+2; ta.setSelectionRange(p,p); closeM(); autoGrow(); ta.focus(); const inf=mentionInfo(it); if(!inf.ok) toast(it.name+' はまだつながっていません（カスタマイズ → アプリ接続）','info',3500); };
+  const paintM=()=>{ const q=mQuery(); if(!q){ closeM(); return; } const k=q.q.toLowerCase(); mList=MENTIONS.filter(m=>m==='sep'||!k||m.name.toLowerCase().includes(k)||m.keys.includes(k)); while(mList[0]==='sep') mList.shift(); while(mList[mList.length-1]==='sep') mList.pop(); const items=mList.filter(x=>x!=='sep'); if(!items.length){ closeM(); return; } mSel=clamp(mSel,0,items.length-1);
+    if(!mBox){ mBox=h('div',{class:'mention'}); box.append(mBox); } mBox.innerHTML=''; mBox.append(h('div',{class:'mh'},'@ で使うアプリや機能を指定（↑↓で選んで Enter）')); let idx=0;
+    mList.forEach(m=>{ if(m==='sep'){ mBox.append(h('div',{class:'ddSep'})); return; } const inf=mentionInfo(m); const my=idx++; const b=h('button',{type:'button',class:my===mSel?'on':'',html:`<span class="mi" style="background:${inf.color}">${ic(inf.icon)}</span><span style="min-width:0;flex:1"><b>${esc(m.name)}</b><small>${esc(inf.desc)}</small></span>${inf.ok?'':'<span class="off">未接続</span>'}`}); b.onmousedown=e=>e.preventDefault(); b.onclick=()=>pickM(m); mBox.append(b); });
+    const on=mBox.querySelector('button.on'); on&&on.scrollIntoView({block:'nearest'}); };
+  const paintPills=()=>{ const ms=mentionsIn(ta.value); pills.innerHTML=''; pills.style.display=ms.length?'flex':'none'; ms.forEach(m=>{ const inf=mentionInfo(m); pills.append(h('span',{style:`background:${inf.color}`,html:ic(inf.icon)+esc(m.name)+'を使う'})); }); };
+  ta.addEventListener('input',()=>{ mSel=0; paintM(); paintPills(); }); ta.addEventListener('click',paintM); ta.addEventListener('blur',()=>setTimeout(closeM,150));
+  ta.addEventListener('keydown',e=>{ if(!mBox) return; const items=mList.filter(x=>x!=='sep'); if(e.key==='ArrowDown'){ e.preventDefault(); mSel=(mSel+1)%items.length; paintM(); } else if(e.key==='ArrowUp'){ e.preventDefault(); mSel=(mSel-1+items.length)%items.length; paintM(); } else if((e.key==='Enter'&&!e.isComposing)||e.key==='Tab'){ e.preventDefault(); e.stopImmediatePropagation(); pickM(items[mSel]); } else if(e.key==='Escape'){ closeM(); } },true);
+  const atB=h('button',{class:'btn icon ghost',title:'アプリや機能を指定（@）',html:ic('at-sign')}); atB.onclick=()=>{ const p=ta.selectionStart; const pre=ta.value.slice(0,p); const add=(pre&&!/\s$/.test(pre)?' ':'')+'@'; ta.setRangeText(add,p,ta.selectionEnd,'end'); ta.focus(); mSel=0; paintM(); };
+  bar.insertBefore(atB,modes);
   const autoGrow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(240,ta.scrollHeight)+'px'; send.disabled=!busy&&!ta.value.trim()&&!atts.length; }; ta.oninput=autoGrow; autoGrow();
   ta.onfocus=()=>box.classList.add('focus'); ta.onblur=()=>box.classList.remove('focus');
-  ta.onkeydown=e=>{ if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&!matchMedia('(pointer:coarse)').matches){ e.preventDefault(); submit(); } };
+  ta.onkeydown=e=>{ if(mBox) return; if(e.key==='Enter'&&!e.shiftKey&&!e.isComposing&&!matchMedia('(pointer:coarse)').matches){ e.preventDefault(); submit(); } };
   const addFiles=async fs=>{ for(const f of fs){ const chip=h('div',{class:'attChip',html:`<div class="ai">${ic('loader')}</div><span>${esc(f.name)}</span>`}); cAtts.append(chip); cAtts.style.display='flex'; try{ const a=await prepAtt(f); atts.push(a); chip.innerHTML=(a.thumb?`<img src="${a.thumb}">`:`<div class="ai">${ic(fileIcon(a.name))}</div>`)+`<span>${esc(a.name)}</span>`; const x=h('button',{html:ic('x'),title:'外す'}); x.onclick=()=>{ atts=atts.filter(z=>z!==a); chip.remove(); if(!atts.length) cAtts.style.display='none'; autoGrow(); }; chip.append(x); if(a.note) toast(a.note,'info'); }catch(e){ chip.remove(); toast(e.message,'x'); } autoGrow(); } };
   fileIn.onchange=()=>{ addFiles([...fileIn.files]); fileIn.value=''; };
   box.ondragover=e=>{ e.preventDefault(); box.classList.add('drag'); }; box.ondragleave=()=>box.classList.remove('drag'); box.ondrop=e=>{ e.preventDefault(); box.classList.remove('drag'); addFiles([...e.dataTransfer.files]); };
@@ -43,19 +90,19 @@ function chatView(root,{chatId='',kind='chat',toolFilter,extraSys='',compact=fal
   function paintMsg(m){ const key=m.id; const hash=stableHash(m); const old=rendered.get(key); if(old&&old.hash===hash) return; const el=m.role==='user'?userEl(m):aiEl(m,{last:m===msgs[msgs.length-1]}); if(old) old.el.replaceWith(el); else inner.append(el); rendered.set(key,{el,hash}); }
   function paintAll(){ if(!msgs.length&&!pendingEl){ rendered.clear(); showWelcome(); return; } const wl=inner.querySelector('.welcome'); if(wl) wl.remove(); if(emptyEl&&!rendered.size) inner.innerHTML=''; const ids=new Set(msgs.map(m=>m.id)); for(const [k,v] of rendered) if(!ids.has(k)&&!(pendingEl&&pendingEl.dataset.id===k)){ v.el.remove(); rendered.delete(k); }
     msgs.forEach(paintMsg); if(pendingEl) inner.append(pendingEl); scrollEnd(); }
-  function userEl(m){ const el=h('div',{class:'m user'}); const w=h('div',{style:'max-width:82%;display:flex;flex-direction:column;align-items:flex-end'}); if(m.atts&&m.atts.length){ const a=h('div',{class:'atts'}); m.atts.forEach(x=>a.append(h('div',{class:'attChip',html:(x.thumb?`<img src="${x.thumb}">`:`<div class="ai">${ic(fileIcon(x.name))}</div>`)+`<span>${esc(x.name)}</span>`}))); w.append(a); } if(m.text) w.append(h('div',{class:'bub',style:'max-width:100%'},m.text)); el.append(w); return el; }
+  function userEl(m){ const el=h('div',{class:'m user'}); const w=h('div',{style:'max-width:82%;display:flex;flex-direction:column;align-items:flex-end'}); if(m.atts&&m.atts.length){ const a=h('div',{class:'atts'}); m.atts.forEach(x=>a.append(h('div',{class:'attChip',html:(x.thumb?`<img src="${x.thumb}">`:`<div class="ai">${ic(fileIcon(x.name))}</div>`)+`<span>${esc(x.name)}</span>`}))); w.append(a); } if(m.text) w.append(h('div',{class:'bub',style:'max-width:100%',html:mentionHTML(m.text)})); el.append(w); return el; }
   function aiEl(m,{last}={}){ const el=h('div',{class:'m ai'}); el.dataset.id=m.id; el.append(h('div',{class:'avA',html:ic('sparkles')})); const body=h('div',{class:'body'}); el.append(body); renderAI(body,m,{last,regen:()=>regen(m)}); return el; }
   function stepsEl(steps,live){ const s=h('div',{class:'steps'}); steps.forEach(st=>{ const d=h('details',{class:'step'}); d.append(h('summary',{html:ic(st.icon||'wrench')+`<b>${esc(st.label)}</b><span class="st">${st.status==='run'?'<i class="spin"></i>実行中':st.status==='ok'?'<i class="okd"></i>完了':'<i class="bad"></i>失敗'}</span>`})); if(st.result) d.append(h('pre',null,st.result)); s.append(d); }); if(!live&&steps.length>3){ s.style.display='none'; const t=h('button',{class:'chip',style:'margin-bottom:10px',html:ic('list-checks')+steps.length+'個の作業をしました'}); t.onclick=()=>{ s.style.display=''; t.remove(); }; return h('div',null,t,s); } return s; }
   /* ---- 送る ---- */
   async function submit(text){ text=(text??ta.value).trim(); if(busy||(!text&&!atts.length)) return; if(!geminiKey().key){ keyHelp(); return; }
     const myAtts=atts; atts=[]; cAtts.innerHTML=''; cAtts.style.display='none'; ta.value=''; autoGrow();
     if(!cid){ cid=await newChatDoc(kind,text.slice(0,24)||'ファイルについて'); onChat&&onChat(cid); subscribe(); }
-    const um={id:uid(),role:'user',text,atts:myAtts.map(stripAtt),at:Date.now()}; msgs.push({...um,atts:myAtts}); paintAll(); scrollEnd(true); addMsg(cid,um).catch(e=>toast('保存できませんでした：'+e.message,'x'));
+    const force=mentionsIn(text).map(m=>m.id); const um={id:uid(),role:'user',text,atts:myAtts.map(stripAtt),at:Date.now(),force}; pills.innerHTML=''; pills.style.display='none'; msgs.push({...um,atts:myAtts}); paintAll(); scrollEnd(true); addMsg(cid,um).catch(e=>toast('保存できませんでした：'+e.message,'x'));
     await answer(); }
   async function answer(){ busy=true; send.classList.add('stop'); send.innerHTML=ic('square'); send.disabled=false; abort=new AbortController(); const aid=uid();
     pendingEl=h('div',{class:'m ai'}); pendingEl.dataset.id=aid; pendingEl.append(h('div',{class:'avA',html:ic('sparkles')})); const body=h('div',{class:'body'}); const stepsBox=h('div'); const think=h('div',{class:'thinking',html:'<i><span></span><span></span><span></span></i>考えています'}); body.append(stepsBox,think); pendingEl.append(body); inner.append(pendingEl); scrollEnd(true);
     const history=msgs.slice(-40); let res; const offW=BUS.on('wait',w=>{ think.lastChild.textContent=`混み合っているので${Math.round(w)}秒待っています`; });
-    try{ res=await runAgent({msgs:history,signal:abort.signal,toolFilter,extraSys,ctx:{chatId:cid,confirm:(t,b,ok)=>confirmBox(t,b,ok),...ctxExtra},onStep:st=>{ stepsBox.innerHTML=''; stepsBox.append(stepsEl(st,true)); think.lastChild.textContent=st.some(x=>x.status==='run')?'作業しています':'まとめています'; scrollEnd(); }});
+    try{ const lastU=[...history].reverse().find(x=>x.role==='user')||{}; const force=(lastU.force||[]).flatMap(id=>(MENTIONS.find(m=>m.id===id)||{tools:[]}).tools); res=await runAgent({msgs:history,force,signal:abort.signal,toolFilter,extraSys,ctx:{chatId:cid,confirm:(t,b,ok)=>confirmBox(t,b,ok),...ctxExtra},onStep:st=>{ stepsBox.innerHTML=''; stepsBox.append(stepsEl(st,true)); think.lastChild.textContent=st.some(x=>x.status==='run')?'作業しています':'まとめています'; scrollEnd(); }});
       const am={id:aid,role:'model',text:res.text,at:Date.now(),steps:res.steps.map(s=>({label:s.label,icon:s.icon,status:s.status})),files:res.files.map(f=>({name:f.name,size:f.size,lib:f.lib||'',content:f.size<250000?f.content:'',note:f.note||''})),media:res.media,cards:res.cards,actions:res.actions,sources:res.sources.slice(0,10)};
       pendingEl.remove(); pendingEl=null; msgs.push(am); paintAll(); await addMsg(cid,am); await DB.put('chats',cid,{updated:Date.now(),count:msgs.length,summary:(res.text||'').slice(0,160)});
       if(msgs.length<=2) autoTitle(cid,msgs); if(document.hidden&&S.settings.notify) notify('エージェントAi',(res.text||'作業が終わりました').replace(/[#*`]/g,'').slice(0,120),'#/chat/'+cid);

@@ -375,3 +375,21 @@ label.lab{display:block;font-size:13px;font-weight:700;color:var(--ink2);margin:
 }
 @media (max-width:860px){ .brand .collapse,.nav .kbd{display:none} }
 a.btn{text-decoration:none;color:var(--ink)}a.btn.pri{color:#fff}
+
+.ddMenu.up{top:auto;bottom:calc(100% + 6px);transform-origin:bottom left}
+.ddMenu.right.up{transform-origin:bottom right}
+.ddItem div{min-width:0}
+/* @メンション */
+.mention{position:absolute;left:12px;bottom:calc(100% + 8px);width:min(360px,calc(100% - 24px));max-height:320px;overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:var(--sh);padding:6px;z-index:60;animation:ddIn .2s cubic-bezier(.2,.8,.2,1);transform-origin:bottom left}
+.mention .mh{font-size:11.5px;color:var(--ink3);padding:6px 10px 4px}
+.mention button{display:flex;align-items:center;gap:10px;width:100%;border:0;background:none;padding:8px 10px;border-radius:10px;text-align:left}
+.mention button.on,.mention button:hover{background:var(--accSoft)}
+.mention .mi{width:30px;height:30px;border-radius:9px;display:grid;place-items:center;color:#fff;flex:none}
+.mention .mi svg{width:16px;height:16px}
+.mention b{display:block;font-size:14px}.mention small{display:block;color:var(--ink3);font-size:12px}
+.mention .off{margin-left:auto;font-size:11px;color:var(--ink3);white-space:nowrap}
+.cbox{position:relative}
+.mtag{display:inline-block;background:color-mix(in srgb,var(--acc) 22%,transparent);color:inherit;border-radius:6px;padding:0 5px;font-weight:700}
+.mPills{display:flex;gap:6px;flex-wrap:wrap;padding:8px 14px 0}
+.mPills span{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700;border-radius:999px;padding:3px 9px 3px 6px;color:#fff}
+.mPills span svg{width:13px;height:13px}
