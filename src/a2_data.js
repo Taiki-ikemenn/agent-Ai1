@@ -42,6 +42,7 @@ function startSync(){ stopSync(); const m=FB.m; const sub=(q,f)=>S.subs.push(m.o
   sub(m.query(DB.col('memories'),m.orderBy('at','desc'),m.limit(500)),qs=>{ S.memories=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('memories'); });
   sub(m.query(DB.col('library'),m.orderBy('at','desc'),m.limit(400)),qs=>{ S.library=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('library'); });
   sub(m.query(DB.col('schedules')),qs=>{ S.schedules=qs.docs.map(d=>({id:d.id,...d.data()})).sort((a,b)=>(a.created||0)-(b.created||0)); BUS.emit('schedules'); });
+  sub(m.query(DB.col('apps')),qs=>{ S.apps=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('apps'); });
   sub(m.query(DB.col('feed'),m.orderBy('at','desc'),m.limit(60)),qs=>{ S.feed=qs.docs.map(d=>({id:d.id,...d.data()})); BUS.emit('feed'); }); }
 function curProject(){ return S.projects[S.curProject]||null; }
 function setProject(id){ S.curProject=id||''; LS.set('curProject',S.curProject); BUS.emit('project'); }

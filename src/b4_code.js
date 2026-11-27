@@ -23,7 +23,7 @@ function buildPreview(){ const html=CODE.files.find(f=>f.name==='index.html')||C
   const cap=`<script>(function(){const K='${key}';const P=(t,v)=>parent.postMessage({k:K,t,v},'*');const F=x=>{try{return typeof x==='string'?x:JSON.stringify(x)}catch(e){return String(x)}};['log','info','warn','error'].forEach(m=>{const o=console[m];console[m]=(...a)=>{P(m,a.map(F).join(' '));o.apply(console,a)}});addEventListener('error',e=>P('error',e.message+' ('+(e.lineno||'')+'行目)'));addEventListener('unhandledrejection',e=>P('error',String(e.reason)));})();<\/script>`;
   let doc; if(html){ doc=html.content; doc=doc.replace(/<link[^>]+href=["']([^"']+\.css)["'][^>]*>/gi,(m,href)=>{ const f=CODE.files.find(x=>x.name===href.replace(/^\.\//,'')); return f?`<style>\n${f.content}\n</style>`:m; });
     doc=doc.replace(/<script([^>]*)src=["']([^"']+\.m?js)["']([^>]*)><\/script>/gi,(m,a,src,b)=>{ const f=CODE.files.find(x=>x.name===src.replace(/^\.\//,'')); return f?`<script${a}${b}>\n${f.content.replace(/<\/script/gi,'<\\/script')}\n<\/script>`:m; });
-    doc=/<head[^>]*>/i.test(doc)?doc.replace(/<head[^>]*>/i,x=>x+cap):cap+doc; }
+    doc=/<head[^>]*>/i.test(doc)?doc.replace(/<head[^>]*>/i,x=>x+cap+appShim('code_'+CODE.id,{})):cap+appShim('code_'+CODE.id,{})+doc; }
   else { const js=CODE.files.filter(f=>/\.m?js$/.test(f.name)).map(f=>f.content).join('\n;\n'); const css=CODE.files.filter(f=>/\.css$/.test(f.name)).map(f=>f.content).join('\n'); doc=`<!DOCTYPE html><html><head><meta charset="utf-8">${cap}<style>body{font-family:system-ui;padding:16px}${css}</style></head><body><script>${js.replace(/<\/script/gi,'<\\/script')}<\/script></body></html>`; }
   return {doc,key}; }
 /* ---------- コード画面のAIの道具 ---------- */
@@ -48,11 +48,13 @@ PAGES.code=async(pg,arg)=>{ topBar('コード',{icon:'code-xml'}); pg.style.over
   const back=h('button',{class:'btn ghost icon',html:ic('arrow-left'),title:'一覧へ',onclick:()=>go('#/code')});
   const zipB=h('button',{class:'btn ghost',html:ic('folder-down')+'<span class="lbl">ZIP</span>',title:'まとめて保存',onclick:()=>downloadBlob(makeZip(CODE.files),(CODE.name||'code')+'.zip')});
   const ghB=h('button',{class:'btn ghost',html:ic('github')+'<span class="lbl">GitHubへ</span>',onclick:()=>pushGitHub()});
+  const appB=h('button',{class:'btn ghost',html:ic('layout-grid')+'<span class="lbl">マイアプリへ</span>',onclick:async()=>{ const {doc}=buildPreview(); const html=doc.replace(/<script>\(function\(\)\{const K='cv[^<]*<\/script>/,''); const ex=(S.apps||[]).find(a=>a.code===arg); try{ await saveApp({name:CODE.name,html,code:arg,id:ex&&ex.id,icon:ex&&ex.icon,color:ex&&ex.color}); toast(ex?'マイアプリを更新しました':'マイアプリに入れました','layout-grid'); }catch(e){ toast(e.message,'x'); } }});
+  const pubB=h('button',{class:'btn ghost icon',title:'GitHub Pagesで公開',html:ic('globe'),onclick:()=>publishPages({name:CODE.name,files:CODE.files.map(f=>({name:f.name,content:f.content})),codeId:arg})});
   const openB=h('button',{class:'btn ghost icon',title:'別のタブで開く',html:ic('external-link'),onclick:()=>{ const {doc}=buildPreview(); const u=URL.createObjectURL(new Blob([doc],{type:'text/html'})); window.open(u,'_blank'); }});
-  topBar('',{icon:'code-xml',right:[back,name,zipB,ghB,openB]}); $('#top h1').style.display='none';
+  topBar('',{icon:'code-xml',right:[back,name,appB,zipB,ghB,pubB,openB]}); $('#top h1').style.display='none';
   const page=h('div',{class:'codePage'}); pg.append(page); const left=h('div',{class:'codeChat'}), work=h('div',{class:'codeWork'}); page.append(left,work);
   // 左：AIチャット
-  const chat=chatView(left,{chatId:d.chat||'',kind:'code',compact:true,extraSys:CODE_SYS,placeholder:'作りたいものや直したいところを頼む…',toolFilter:t=>t.group==='code'||['web_search','read_webpage','create_image','memory_save','memory_search','run_javascript','github_repos','github_read','github_list','github_write'].includes(t.decl.name),onChat:id=>DB.put('codeprojects',arg,{chat:id}),
+  const chat=chatView(left,{chatId:d.chat||'',kind:'code',compact:true,extraSys:CODE_SYS,placeholder:'作りたいものや直したいところを頼む…',toolFilter:t=>t.group==='code'||['web_search','read_webpage','create_image','memory_save','memory_search','run_javascript','github_repos','github_read','github_list','github_write','github_publish','save_app','create_chart','create_qr','ask_user','plan_set','plan_update'].includes(t.decl.name),onChat:id=>DB.put('codeprojects',arg,{chat:id}),
     emptyEl:()=>h('div',{class:'welcome',style:'padding:30px 4px'},h('div',{class:'orb',html:ic('code-xml')}),h('h2',{style:'font-size:22px'},'何を作りましょう？'),h('p',null,'例：「ブロック崩しを作って」「ボタンをもっとおしゃれに」「スマホでも見やすくして」'))});
   // 右：エディタ
   const tabs=h('div',{class:'codeTabs',style:'overflow-x:auto'}); const ed=h('div',{class:'editor'}); const ln=h('div',{class:'ln'}), edw=h('div',{class:'edw'}), pre=h('pre'), ta=h('textarea',{spellcheck:false,autocapitalize:'off',autocomplete:'off'}); edw.append(pre,ta); ed.append(ln,edw);
